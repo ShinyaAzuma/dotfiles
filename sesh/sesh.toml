@@ -1,0 +1,13 @@
+# sesh: tmux セッションランチャー設定
+# `sesh list` で「実行中の tmux セッション + zoxide 履歴 + ここで定義したセッション」が候補に出る。
+# zoxide の履歴は自動で取り込まれるため、普段の cd 操作がそのまま「最近のプロジェクト」になる。
+
+[default_session]
+# セッションを開いた直後に走るコマンド（好みで nvim や git status などに変更可）
+startup_command = "ls"
+
+# よく開く固定プロジェクトはここに明示しておくと、履歴に関係なく常に上位に出せる
+[[session]]
+name = "dotfiles ⚙️"
+path = "~/dotfiles"
+startup_command = "nvim ."

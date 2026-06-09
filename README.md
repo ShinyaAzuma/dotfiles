@@ -37,7 +37,26 @@ chmod +x setup.sh
 - vim 風ペイン移動 (`h/j/k/l`)
 - Lazygit ポップアップ (`prefix + g`)
 - Claude Code ポップアップ (`prefix + a`)
+- プロジェクトランチャー (`prefix + o`) — sesh + zoxide + fzf で最近/よく開くプロジェクトを曖昧検索して起動・復帰
+- セッション永続化 — tmux-resurrect / tmux-continuum で再起動後も前回のセッションを自動復元（15分ごと自動保存）
 - Tokyo Night テーマ (TPM)
+
+### プロジェクトランチャー（sesh + zoxide + fzf）
+
+`prefix + o` で、実行中の tmux セッション・`zoxide` の訪問履歴・`sesh/sesh.toml` の定義をまとめて曖昧検索し、選んだプロジェクトを tmux セッションとして起動（既存なら復帰）します。
+
+| 依存 | 役割 |
+|---|---|
+| `zoxide` | 訪れたディレクトリを頻度順に記憶（「最近のプロジェクト」の元データ） |
+| `fzf` | 曖昧検索 UI |
+| `sesh` | 候補を tmux セッションとして起動／復帰 |
+
+```bash
+brew install sesh zoxide fzf
+```
+
+`zoxide` は `.zshrc` で `eval "$(zoxide init zsh)"` を読み込む必要があります（`.zshrc` は本リポジトリ管理外）。
+ランチャー内のキー: `^a` 全候補 / `^t` tmux セッション / `^x` zoxide 履歴 / `^d` 選択セッションを kill。
 
 ### Ghostty
 - フォント: MesloLGS NF
