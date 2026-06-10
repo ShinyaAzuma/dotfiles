@@ -1,0 +1,52 @@
+#!/bin/bash
+# 未アタッチ（誰も開いていない）tmux セッションをまとめて終了する。
+# 番号セッションや、開きっぱなしで残った claude-/codex- セッションの掃除用。
+#
+# Usage:
+#   tmux-clean         未アタッチのセッションを全て終了
+#   tmux-clean -n      終了せず対象だけ表示（ドライラン）
+#   tmux-clean -h      ヘルプ
+
+set -euo pipefail
+
+dry_run=0
+case "${1:-}" in
+  -n|--dry-run) dry_run=1 ;;
+  -h|--help)
+    awk 'NR==1{next} /^#/{sub(/^# ?/,""); print; next} {exit}' "$0"
+    exit 0 ;;
+  "") ;;
+  *) echo "unknown option: $1 (use -h)"; exit 1 ;;
+esac
+
+if ! tmux info >/dev/null 2>&1; then
+  echo "tmux サーバが起動していません。掃除対象なし。"
+  exit 0
+fi
+
+# 未アタッチ（attached=0）のセッション名を収集（macOS の bash 3.2 でも動くように mapfile は使わない）
+targets=$(
+  tmux list-sessions -F '#{session_name} #{session_attached}' 2>/dev/null \
+    | awk '$2==0 {print $1}'
+)
+
+if [ -z "$targets" ]; then
+  echo "未アタッチのセッションはありません。"
+  exit 0
+fi
+
+count=$(printf '%s\n' "$targets" | grep -c .)
+echo "対象（未アタッチ）: $count 件"
+printf '%s\n' "$targets" | sed 's/^/  - /'
+
+if [ "$dry_run" -eq 1 ]; then
+  echo "(ドライラン: 実際には終了していません)"
+  exit 0
+fi
+
+printf '%s\n' "$targets" | while IFS= read -r s; do
+  [ -n "$s" ] || continue
+  tmux kill-session -t "$s" && echo "killed: $s"
+done
+echo "完了。残り:"
+tmux list-sessions -F '  #{session_name} (attached=#{session_attached})' 2>/dev/null || echo "  (なし)"

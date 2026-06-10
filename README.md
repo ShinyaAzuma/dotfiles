@@ -62,3 +62,17 @@ brew install sesh zoxide fzf
 - フォント: MesloLGS NF
 - テーマ: Tokyo Night
 - 半透明背景 (opacity: 0.92)
+- ネイティブ分割（旧 tmux `ide` の代替。GPU 描画で軽量・使い捨て前提。永続化が必要なものは tmux/sesh 側で管理）
+
+#### 分割キーバインド
+
+| キー | 動作 |
+|---|---|
+| `cmd+d` / `cmd+shift+d` | 右に分割 / 下に分割 |
+| `cmd+alt+h/j/k/l` | ペイン移動（vim 風） |
+| `cmd+ctrl+h/j/k/l` | ペインのリサイズ |
+| `cmd+ctrl+=` | サイズ均等化 |
+| `cmd+shift+enter` | ズーム（全画面トグル） |
+| `cmd+w` | ペインを閉じる |
+
+`cmd` 系のため tmux prefix (`Ctrl+t`) と衝突しません。

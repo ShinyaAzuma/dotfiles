@@ -1,0 +1,15 @@
+#!/bin/bash
+# 引数で下部ペインの分割数を指定（デフォルト: 3）
+count=${1:-3}
+
+if [ "$count" -lt 1 ] 2>/dev/null; then
+  echo "Usage: ide [number_of_panes] (default: 3)"
+  exit 1
+fi
+
+tmux split-window -v -p 30
+
+for i in $(seq 1 $((count - 1))); do
+  pct=$(((count - i) * 100 / (count - i + 1)))
+  tmux split-window -h -p "$pct"
+done

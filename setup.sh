@@ -15,4 +15,9 @@ ln -sf "$DOTFILES_DIR/ghostty" "$HOME/.config/ghostty"
 mkdir -p "$HOME/.config/sesh"
 ln -sf "$DOTFILES_DIR/sesh/sesh.toml" "$HOME/.config/sesh/sesh.toml"
 
+# bin（自作コマンド）
+mkdir -p "$HOME/bin"
+ln -sf "$DOTFILES_DIR/bin/ide" "$HOME/bin/ide"
+ln -sf "$DOTFILES_DIR/bin/tmux-clean" "$HOME/bin/tmux-clean"
+
 echo "Done!"

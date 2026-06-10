@@ -30,3 +30,25 @@ copy-on-select = clipboard
 
 # macOS
 macos-option-as-alt = true
+
+# ===== Splits / Panes =====
+# tmux ide を廃止し、ネイティブ分割へ移行（GPU 描画で軽量・使い捨て前提）。
+# 永続化が必要なものは引き続き tmux(sesh) 側で管理する。
+#
+# 既定キー（Ghostty 標準）:
+#   cmd+d          右に分割        cmd+shift+d   下に分割
+#   cmd+w          ペインを閉じる   cmd+ctrl+=    サイズ均等化
+#   cmd+shift+↵    ズーム(全画面トグル)
+#   cmd+[ / cmd+]  前/次のペインへ
+#
+# 以下は tmux と同じ vim 風 h/j/k/l を追加（cmd 系なので tmux prefix C-t と非衝突）。
+# ペイン移動
+keybind = cmd+alt+h=goto_split:left
+keybind = cmd+alt+j=goto_split:down
+keybind = cmd+alt+k=goto_split:up
+keybind = cmd+alt+l=goto_split:right
+# ペインのリサイズ
+keybind = cmd+ctrl+h=resize_split:left,10
+keybind = cmd+ctrl+j=resize_split:down,10
+keybind = cmd+ctrl+k=resize_split:up,10
+keybind = cmd+ctrl+l=resize_split:right,10
