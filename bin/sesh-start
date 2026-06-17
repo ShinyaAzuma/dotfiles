@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# tmux に入る代わりに sesh ピッカーを開くランチャー。
+# bare `tmux` が作る連番セッション(0,1,...)を発生させずに、
+# プロジェクトを選んだ瞬間にそのセッションを作成/復帰してアタッチする。
+#
+# tmux.conf の `bind o`（Ctrl+t o）と同じ挙動を、tmux の外でも使える
+# 素の fzf で再現したもの。選ばなければ（ESC）素の zsh に戻る。
+#
+# Usage:
+#   sesh-start         ピッカーを開いて選択 → 起動/復帰（選ばなければ何もしない）
+
+set -euo pipefail
+
+# 既に tmux 内なら何もしない（ネスト防止）
+if [ -n "${TMUX:-}" ]; then
+  exit 0
+fi
+
+# 依存コマンドが無ければ静かに終了（素の zsh のまま使える）
+command -v sesh >/dev/null 2>&1 || exit 0
+command -v fzf  >/dev/null 2>&1 || exit 0
+
+selected=$(
+  sesh list --icons | fzf \
+    --no-sort --ansi --reverse --height 60% \
+    --border --border-label ' sesh ' --prompt '⚡  ' \
+    --header '  ^a all ^t tmux ^x zoxide ^d kill' \
+    --bind 'tab:down,btab:up' \
+    --bind 'ctrl-a:change-prompt(⚡  )+reload(sesh list --icons)' \
+    --bind 'ctrl-t:change-prompt(🪟  )+reload(sesh list -t --icons)' \
+    --bind 'ctrl-x:change-prompt(📁  )+reload(sesh list -z --icons)' \
+    --bind 'ctrl-d:execute(tmux kill-session -t {2..})+change-prompt(⚡  )+reload(sesh list --icons)' \
+  || true
+)
+
+# 何も選ばなかった場合は素の zsh に戻る（連番セッションは作らない）
+[ -z "$selected" ] && exit 0
+
+exec sesh connect "$selected"

@@ -19,5 +19,6 @@ ln -sf "$DOTFILES_DIR/sesh/sesh.toml" "$HOME/.config/sesh/sesh.toml"
 mkdir -p "$HOME/bin"
 ln -sf "$DOTFILES_DIR/bin/ide" "$HOME/bin/ide"
 ln -sf "$DOTFILES_DIR/bin/tmux-clean" "$HOME/bin/tmux-clean"
+ln -sf "$DOTFILES_DIR/bin/sesh-start" "$HOME/bin/sesh-start"
 
 echo "Done!"
