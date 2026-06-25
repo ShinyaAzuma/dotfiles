@@ -20,6 +20,23 @@ fi
 command -v sesh >/dev/null 2>&1 || exit 0
 command -v fzf  >/dev/null 2>&1 || exit 0
 
+# --- コールドスタート時の continuum 自動復元との競合を回避 ---
+# その日最初のターミナルでは tmux サーバが落ちており、最初の `sesh connect` が
+# サーバ起動 → continuum が前回セッションを一斉復元、という流れを引き起こす。
+# 復元でサーバがビジーな最中に attach すると "Failed to attach ... exit status 1"
+# になる。先にサーバを起動して復元の開始を待ち、競合窓を潰しておく。
+if ! tmux info >/dev/null 2>&1; then
+  tmux start-server 2>/dev/null || true
+  # 復元でセッションが現れるか、最大 ~3 秒待つ（復元対象が無ければ空のまま抜ける）
+  for _ in $(seq 1 15); do
+    if tmux list-sessions >/dev/null 2>&1; then
+      sleep 0.3   # 1つ目が現れてから残りの復元が落ち着くまで軽く待つ
+      break
+    fi
+    sleep 0.2
+  done
+fi
+
 selected=$(
   sesh list --icons | fzf \
     --no-sort --ansi --reverse --height 60% \
@@ -36,4 +53,14 @@ selected=$(
 # 何も選ばなかった場合は素の zsh に戻る（連番セッションは作らない）
 [ -z "$selected" ] && exit 0
 
-exec sesh connect "$selected"
+# 復元と稀に競合して attach に失敗することがあるため数回リトライ（保険）。
+# sesh connect は冪等（存在すれば接続・無ければ作成）なので再試行は安全。
+for attempt in 1 2 3 4; do
+  if sesh connect "$selected"; then
+    exit 0
+  fi
+  [ "$attempt" -lt 4 ] && sleep 0.5
+done
+
+echo "sesh: セッションへの接続に失敗しました（$selected）。素の zsh に戻ります。" >&2
+exit 0
