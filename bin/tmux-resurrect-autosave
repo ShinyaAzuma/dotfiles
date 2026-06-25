@@ -1,0 +1,32 @@
+#!/bin/bash
+# tmux-resurrect のセッションを定期的にバックグラウンド保存するループ。
+#
+# tokyo-night-tmux / tmux-continuum は status-right の #() widget として
+# 動くため、Claude Code 等の TUI ペインが再描画するたびに毎回 bash を spawn し、
+# tmux サーバーの CPU を焼く（再描画イベント起因なので status-interval では止まらない）。
+# 自動保存をステータスバーから切り離し、ここで一定間隔ごとに保存することで
+# 機能を維持したまま CPU をほぼ 0 にする。
+#
+# tmux.conf から `run-shell -b` で多重起動ガード付きで起動される。
+#
+# Usage:
+#   tmux-resurrect-autosave [INTERVAL_SEC]   既定 900 秒（15分）おきに保存
+#   tmux-resurrect-autosave -h               ヘルプ
+
+set -uo pipefail
+
+case "${1:-}" in
+  -h|--help)
+    awk 'NR==1{next} /^#/{sub(/^# ?/,""); print; next} {exit}' "$0"
+    exit 0 ;;
+esac
+
+interval="${1:-900}"
+save="$HOME/.tmux/plugins/tmux-resurrect/scripts/save.sh"
+
+while true; do
+  sleep "$interval"
+  # tmux サーバーが生きていて、保存スクリプトがある時だけ保存
+  tmux info >/dev/null 2>&1 || continue
+  [ -x "$save" ] && "$save" quiet
+done
