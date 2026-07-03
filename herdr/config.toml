@@ -11,6 +11,8 @@ auto_switch = false
 focus_agent = "prefix+alt+1..9"     # Ctrl+b → Alt+1..9 で agent#N へ直接ジャンプ
 next_agent = "prefix+shift+j"        # 次の agent へ
 previous_agent = "prefix+shift+k"    # 前の agent へ
+previous_workspace = "alt+up"        # Alt+↑ 前のワークスペースへ（prefix不要・連打可）
+next_workspace = "alt+down"          # Alt+↓ 次のワークスペースへ
 
 # ===== エージェント起動ショートカット（tmux の Ctrl+t a a / a r / X 相当）=====
 # type = "pane": 新しいペインでコマンドを起動し、終了するとペインが閉じる
