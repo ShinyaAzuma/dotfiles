@@ -9,8 +9,8 @@ auto_switch = false
 # ===== agent 間ジャンプ（既定は未設定なので割り当て）=====
 [keys]
 focus_agent = "prefix+alt+1..9"     # Ctrl+b → Alt+1..9 で agent#N へ直接ジャンプ
-next_agent = "prefix+shift+j"        # 次の agent へ
-previous_agent = "prefix+shift+k"    # 前の agent へ
+next_agent = "alt+shift+down"        # Alt+Shift+↓ 次の agent へ（prefix不要・連打可）
+previous_agent = "alt+shift+up"      # Alt+Shift+↑ 前の agent へ
 previous_workspace = "alt+up"        # Alt+↑ 前のワークスペースへ（prefix不要・連打可）
 next_workspace = "alt+down"          # Alt+↓ 次のワークスペースへ
 
