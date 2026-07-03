@@ -15,6 +15,11 @@ ln -sf "$DOTFILES_DIR/ghostty" "$HOME/.config/ghostty"
 mkdir -p "$HOME/.config/sesh"
 ln -sf "$DOTFILES_DIR/sesh/sesh.toml" "$HOME/.config/sesh/sesh.toml"
 
+# herdr（エージェント・マルチプレクサ / tmux後継）
+# ディレクトリ全体はリンクしない（logs/sock/session.json 等のランタイムファイルが同居するため）
+mkdir -p "$HOME/.config/herdr"
+ln -sf "$DOTFILES_DIR/herdr/config.toml" "$HOME/.config/herdr/config.toml"
+
 # bin（自作コマンド）
 mkdir -p "$HOME/bin"
 ln -sf "$DOTFILES_DIR/bin/ide" "$HOME/bin/ide"
