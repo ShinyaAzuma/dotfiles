@@ -57,7 +57,10 @@ eval "$(rbenv init -)"
 export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
 export PATH="$HOME/.local/bin:$PATH"
 export PATH="$HOME/.codeium/windsurf/bin:$PATH"
-export PATH="$HOME/.nvm/versions/node/v$(cat $NVM_DIR/alias/default 2>/dev/null)/bin:$PATH"
+# nvm のデフォルト版（alias/default の中身が既に "v25.6.1" 形式なので v を重ねない）
+_nvm_default="$(cat "$NVM_DIR/alias/default" 2>/dev/null)"
+[ -n "$_nvm_default" ] && export PATH="$HOME/.nvm/versions/node/$_nvm_default/bin:$PATH"
+unset _nvm_default
 export PATH=$PATH:$ANDROID_HOME/platform-tools
 
 # 環境変数
@@ -227,3 +230,14 @@ ghprw() {
 #   export SESH_AUTOSTARTED=1
 #   command -v sesh-start >/dev/null 2>&1 && sesh-start
 # fi
+
+# ===== /usr/local/bin を PATH 末尾へ =====
+# Darwin 27 で Rosetta 2 が使えなくなり、旧 x86_64 Homebrew (/usr/local) の
+# バイナリが全て実行不能になった。macOS の既定 PATH は /usr/local/bin が
+# /usr/bin より前にあるため、壊れた git / jq / openssl / stdbuf / tclsh / wish が
+# システム標準を影で潰していた（gh が内部で git を呼んで失敗する等）。
+# ディレクトリ自体は消さない。旧 Homebrew 以外の生存物（cursor, tailscale,
+# vagrant, /usr/local/aws-cli など）が同居しているため。
+# 全ての PATH 追記より後で評価する必要があるので、このファイルの末尾に置くこと。
+path=("${(@)path:#/usr/local/bin}" /usr/local/bin)
+typeset -U path PATH

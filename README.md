@@ -45,6 +45,17 @@ chmod +x setup.sh
 
 既存の `~/.zshrc` / `~/.zprofile` が実体ファイルの場合、`setup.sh` が `*.bak.<日時>` として退避してからリンクします。
 
+#### /usr/local/bin を PATH 末尾へ
+
+macOS の既定 PATH は `/usr/local/bin` を `/usr/bin` より前に置きます。Rosetta 2 が使えなくなった環境では旧 x86_64 Homebrew のバイナリが実行不能なため、`git` や `jq` がシステム標準を影で潰します。`zsh/zshrc` の末尾で `/usr/local/bin` を PATH 末尾へ回して回避しています（ディレクトリ自体は残す）。全ての PATH 追記より後で評価する必要があるため、この処理は必ずファイル末尾に置いてください。
+
+#### テスト
+
+```bash
+zsh zsh/test/zshrc_test.zsh   # 個人情報の分離と振る舞いの回帰
+zsh zsh/test/path_test.zsh    # PATH 解決の回帰
+```
+
 ### Neovim
 - lazy.nvim によるプラグイン管理
 - LSP / Treesitter / fzf / oil.nvim など
