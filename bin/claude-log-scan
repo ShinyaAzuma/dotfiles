@@ -1,0 +1,531 @@
+#!/usr/bin/env python3
+"""Claude Code のログに紛れ込んだ secret を検出し、その部分だけをマスクする。
+
+Claude Code は会話のトランスクリプトを ~/.claude/projects/**/*.jsonl に平文で
+残す。コマンド出力や読んだファイルの中身もそのまま入るので、.env を cat した
+だけでアクセスキーがディスク上に半永久的に居座る。これを定期的に掃除する。
+
+既定はドライラン（検出して報告するだけ）。--apply を付けた時だけ書き換える。
+マスクは値を `[MASKED:<rule>]` に置換するだけなので、
+  - jsonl の JSON としての妥当性は保たれる（置換後に全行を検証し、壊れたら中止）
+  - 何度かけても結果は変わらない（冪等）
+  - 会話の流れは残るので --resume や履歴検索は壊れない
+
+Usage:
+  claude-log-scan                    既定の対象をスキャンして報告（書き換えない）
+  claude-log-scan --apply            検出した secret をマスクする
+  claude-log-scan --high-only        確度の高いルールだけに絞る
+  claude-log-scan --json             機械可読な出力（launchd から使う）
+  claude-log-scan --quiet --notify   検出時のみ出力し macOS 通知を出す
+  claude-log-scan PATH...            対象を明示する
+"""
+
+from __future__ import annotations
+
+import argparse
+import collections
+import json
+import math
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+
+# ---------------------------------------------------------------- ルール定義
+
+MASK_TEMPLATE = "[MASKED:{rule}]"
+MASK_MARKER = "[MASKED:"
+
+
+@dataclass(frozen=True)
+class Rule:
+    name: str
+    pattern: str          # (?P<V>...) を含めると、その部分だけをマスク対象にする
+    severity: str         # high: 構造を持つトークン / low: 文脈からの推測
+
+
+# 代入の左辺に出がちなキー名。secret_key のような接尾辞は許すが、前置きの
+# 可変長パターン（DB_ 等）は置かない。入力の全位置で総当たりになり、430MB の
+# 走査が分単位まで落ちるため。DB_PASSWORD は PASSWORD 側で捕まる。
+_KEY = (
+    r"(?:pass(?:wd|word)?|secret|token|api[_\-]?key|access[_\-]?key"
+    r"|auth[_\-]?token|client[_\-]?secret|credential|private[_\-]?key)"
+    r"[A-Za-z0-9_\-]{0,24}"
+)
+# 値の文字クラス。" と \ を必ず除くこと。含めると JSON 文字列の閉じ引用符を
+# 食い潰して、マスク後の jsonl が壊れる。
+_VALUE = r"[^\s\"'\\,;)}\]]{8,200}"
+
+# 接頭辞マッチの左境界。これが無いと "task-..." の中の "sk-" を OpenAI の
+# キーとして拾う（実ログで36件の誤検出を出した）。
+_LB = r"(?<![A-Za-z0-9])"
+
+RULES: tuple[Rule, ...] = (
+    # 複数行ブロック。[\s\S] は生の改行と \n エスケープの両方に乗る。
+    Rule("private-key",
+         r"-----BEGIN[A-Z ]{0,32}PRIVATE KEY-----[\s\S]{10,8192}?"
+         r"-----END[A-Z ]{0,32}PRIVATE KEY-----", "high"),
+
+    # sk-ant- は sk- にも一致するので、より具体的な方を先に置く。
+    Rule("anthropic-api-key", _LB + r"sk-ant-[A-Za-z0-9]{2,}-[A-Za-z0-9_\-]{24,}", "high"),
+    Rule("openai-api-key", _LB + r"sk-(?:proj-)?[A-Za-z0-9_\-]{32,}", "high"),
+
+    Rule("github-pat", _LB + r"github_pat_[A-Za-z0-9_]{22,255}", "high"),
+    Rule("github-token", _LB + r"gh[pousr]_[A-Za-z0-9]{36,255}", "high"),
+    Rule("aws-access-key-id",
+         _LB + r"(?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}(?![A-Z0-9])",
+         "high"),
+    Rule("aws-secret-access-key",
+         r"(?i:aws_secret_access_key)\s*[:=]\s*[\"']?(?P<V>[A-Za-z0-9/+=]{40})", "high"),
+    Rule("google-api-key", _LB + r"AIza[A-Za-z0-9_\-]{35}", "high"),
+    Rule("slack-webhook",
+         r"https://hooks\.slack\.com/services/[A-Za-z0-9/_\-]{20,}", "high"),
+    Rule("slack-token", _LB + r"xox[baprse]-[A-Za-z0-9\-]{10,}", "high"),
+    Rule("stripe-key", _LB + r"(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{10,}", "high"),
+    Rule("npm-token", _LB + r"npm_[A-Za-z0-9]{36}", "high"),
+    Rule("linear-api-key", _LB + r"lin_api_[A-Za-z0-9]{32,}", "high"),
+    Rule("pypi-token", _LB + r"pypi-AgEIcHlwaS5vcmc[A-Za-z0-9_\-]{40,}", "high"),
+    Rule("jwt",
+         _LB + r"eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}", "high"),
+
+    # 最後の砦。確度は低いので severity=low とし、値の形まで見て絞る。
+    Rule("generic-assignment",
+         r"(?i:" + _KEY + r")\s*[:=]\s*[\"']?(?P<V>" + _VALUE + r")", "low"),
+)
+
+# 全ルールを1本のパターンに畳む。430MB を舐めるので走査は1パスに抑える。
+# どのルールが当たったかは r<i> グループの有無で判定する（マッチは稀なので安い）。
+_COMBINED = re.compile(
+    "|".join(
+        f"(?P<r{i}>{rule.pattern.replace('?P<V>', f'?P<v{i}>')})"
+        for i, rule in enumerate(RULES)
+    )
+)
+
+# 代入の左辺（token= など）は値より手前にあるので、交替の最左マッチでは
+# generic-assignment が勝ってしまう。拾った値を high ルールに当て直して昇格させる。
+_HIGH_RULES = tuple(
+    (rule.name, re.compile(rule.pattern.replace("?P<V>", "?:")))
+    for rule in RULES
+    if rule.severity == "high" and "?P<V>" not in rule.pattern
+)
+
+
+def _upgrade(value: str) -> str | None:
+    """値そのものが構造を持つトークンなら、そのルール名を返す。"""
+    for name, pattern in _HIGH_RULES:
+        if pattern.fullmatch(value):
+            return name
+    return None
+
+
+# 「設定し忘れ」「サンプル」「環境変数参照」を secret と見なさないための除外語。
+_PLACEHOLDERS = (
+    "masked", "redacted", "process.env", "os.environ", "import.meta", "your",
+    "example", "sample", "dummy", "changeme", "placeholder", "todo", "fixme",
+    "xxxx", "foo", "<", "insert", "replace", "notset", "none", "null",
+    "undefined", "hidden", "settings.", "config.", "self.", "this.",
+)
+
+# 資格情報に使われる文字だけで構成されているか。括弧・引用符・CJK が混じる
+# 値はコードか文章であって secret ではない。
+_CRED_CHARS = re.compile(r"[A-Za-z0-9+/=_.~-]+")
+
+# 識別子を単語・数字の塊に割る（camelCase と snake/kebab/dotted の両方）。
+_CHUNK = re.compile(r"[A-Z]+(?![a-z])|[A-Z][a-z]+|[a-z]+|[0-9]+")
+
+# env.vars.SECRET_KEY のような「参照」。各部分が識別子なら値ではない。
+_DOTTED_REF = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)+")
+
+_VOWELS = "aeiou"
+
+
+def _entropy(value: str) -> float:
+    """1文字あたりの Shannon エントロピー（bit）。"""
+    n = len(value)
+    counts = collections.Counter(value).values()
+    return -sum((c / n) * math.log2(c / n) for c in counts)
+
+
+def _is_identifier_like(value: str) -> bool:
+    """someCamelCase や password-reset-template のようなコードの識別子か。
+
+    実ログの誤検出はほぼこれだった。発音可能な英単語の塊が大半を占め、
+    数字の並びが短いものを識別子と見なす。
+    """
+    chunks = _CHUNK.findall(value)
+    if not chunks:
+        return False
+    if any(c.isdigit() and len(c) > 3 for c in chunks):
+        return False               # 長い数字列は識別子らしくない
+    words = [
+        c for c in chunks
+        if c.isalpha() and len(c) >= 3 and any(v in c.lower() for v in _VOWELS)
+    ]
+    return bool(words) and len(words) / len(chunks) >= 0.5
+
+
+def _is_placeholder(value: str) -> bool:
+    """実在しない値（環境変数参照・サンプル・伏せ字）を弾く。"""
+    low = value.lower()
+    if value[0] in "$%@":                      # $TOKEN / ${TOKEN} / %TOKEN%
+        return True
+    if len(set(value)) <= 2:                   # xxxxxxxx / ******** / aaaaaaaa
+        return True
+    return any(p in low for p in _PLACEHOLDERS)
+
+
+def _looks_like_credential(value: str) -> bool:
+    """値そのものが資格情報の形をしているか。
+
+    「secret っぽいキー名への代入」だけを条件にすると、実ログでは
+    コードの識別子が980件単位で引っかかって一覧が読めなくなる。
+    値の形まで見て絞る。副作用として、英単語ベースの覚えやすい
+    パスワード（Summer2024Pass 等）は取りこぼす。
+    """
+    if len(value) < 12:
+        return False
+    if not _CRED_CHARS.fullmatch(value):
+        return False
+    if _DOTTED_REF.fullmatch(value):
+        return False
+    if _entropy(value) < 3.0:
+        return False
+    if _is_identifier_like(value) and _entropy(value) < 3.9:
+        return False
+    return True
+
+
+@dataclass(frozen=True)
+class Finding:
+    rule: str
+    severity: str
+    start: int            # マスク対象の開始位置（ファイル内容全体に対するオフセット）
+    end: int
+    text: str             # マスク対象の値そのもの
+    prefix: str = ""      # 値の手前にあったキー名など（generic 用）
+    line: int = 0
+
+    def preview(self) -> str:
+        """報告用の伏せ字。報告自体が secret を漏らさないようにする。
+
+        launchd のログに流れる可能性があるので、復元可能な情報は残さない。
+        """
+        stars = "*" * min(max(len(self.text) - 4, 4), 16)
+        if self.severity == "high":
+            # ベンダ接頭辞(AKIA/ghp_)は秘密ではないので、識別のため残す。
+            return self.text[:4] + stars
+        # 推測ルールは値を一切見せず、キー名だけで場所を示す。
+        return (self.prefix.strip() if self.prefix else "") + "*" * 12
+
+
+def scan(content: str) -> list[Finding]:
+    """content 中の secret らしき箇所を、出現順に返す。"""
+    findings: list[Finding] = []
+    for m in _COMBINED.finditer(content):
+        groups = m.groupdict()
+        idx = next(
+            (i for i in range(len(RULES)) if groups.get(f"r{i}") is not None), None
+        )
+        if idx is None:                                   # 到達しない想定
+            continue
+        rule = RULES[idx]
+
+        # (?P<V>) を持つルールは値だけ、持たないルールはマッチ全体が対象。
+        span = m.span(f"v{idx}") if groups.get(f"v{idx}") is not None else m.span()
+        text = content[span[0]:span[1]]
+
+        if MASK_MARKER in text:                           # 既にマスク済み（冪等性）
+            continue
+
+        name, severity = rule.name, rule.severity
+        if severity == "low":
+            upgraded = _upgrade(text)
+            if upgraded is not None:
+                name, severity = upgraded, "high"   # TOKEN=ghp_... を取りこぼさない
+            elif _is_placeholder(text) or not _looks_like_credential(text):
+                continue
+
+        findings.append(Finding(
+            rule=name,
+            severity=severity,
+            start=span[0],
+            end=span[1],
+            text=text,
+            prefix=content[m.start():span[0]],
+            line=content.count("\n", 0, span[0]) + 1,
+        ))
+    return findings
+
+
+def mask_text(content: str, high_only: bool = False) -> tuple[str, list[Finding]]:
+    """secret を `[MASKED:<rule>]` に置換した内容と、置換した finding を返す。"""
+    findings = [
+        f for f in scan(content)
+        if not (high_only and f.severity == "low")
+    ]
+    if not findings:
+        return content, []
+
+    out: list[str] = []
+    cursor = 0
+    for f in findings:
+        out.append(content[cursor:f.start])
+        out.append(MASK_TEMPLATE.format(rule=f.rule))
+        cursor = f.end
+    out.append(content[cursor:])
+    return "".join(out), findings
+
+
+# ------------------------------------------------------------ ファイル処理
+
+DEFAULT_MIN_AGE_MINUTES = 5          # 書き込み中のセッションを触らないための猶予
+DEFAULT_MAX_BYTES = 128 * 1024 * 1024
+
+
+@dataclass
+class FileResult:
+    path: Path
+    findings: list[Finding] = field(default_factory=list)
+    changed: bool = False
+    skipped: str | None = None       # binary / too-large / too-recent / would-break-json
+
+
+def _looks_binary(path: Path) -> bool:
+    try:
+        with path.open("rb") as fh:
+            return b"\x00" in fh.read(8192)
+    except OSError:
+        return True
+
+
+def _jsonl_lines_ok(original: str, masked: str, findings: list[Finding]) -> bool:
+    """触った行が JSON として壊れていないことを確かめる。
+
+    元から壊れている行（書き込み途中など）は責任範囲外なので、
+    「元が読めていた行を壊していない」ことだけを条件にする。
+    """
+    before = original.splitlines()
+    after = masked.splitlines()
+    if len(before) != len(after):
+        return False
+    for f in findings:
+        i = f.line - 1
+        if not (0 <= i < len(before)):
+            return False
+        try:
+            json.loads(before[i])
+        except (ValueError, TypeError):
+            continue                 # 元から壊れている行は判定しない
+        try:
+            json.loads(after[i])
+        except (ValueError, TypeError):
+            return False
+    return True
+
+
+def process_file(
+    path: Path,
+    apply: bool = False,
+    min_age_minutes: int = DEFAULT_MIN_AGE_MINUTES,
+    max_bytes: int = DEFAULT_MAX_BYTES,
+    high_only: bool = False,
+    _mask=mask_text,
+) -> FileResult:
+    """1ファイルを走査し、apply なら原子的に書き換える。"""
+    if _looks_binary(path):
+        return FileResult(path, skipped="binary")
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return FileResult(path, skipped="unreadable")
+    if size > max_bytes:
+        return FileResult(path, skipped="too-large")
+
+    try:
+        # surrogateescape で読み書きすると、不正な UTF-8 もバイト単位で往復する。
+        original = path.read_text(encoding="utf-8", errors="surrogateescape")
+    except OSError:
+        return FileResult(path, skipped="unreadable")
+
+    masked, findings = _mask(original, high_only=high_only)
+    result = FileResult(path, findings=findings)
+    if not findings or masked == original:
+        return result
+    if not apply:
+        return result
+
+    # 書き込み中のファイルを差し替えると、追記ハンドルを持つプロセスが
+    # 古い inode に書き続けてマスクが黙って消える。十分に古いものだけ触る。
+    age_minutes = (time.time() - path.stat().st_mtime) / 60
+    if age_minutes < min_age_minutes:
+        result.skipped = "too-recent"
+        return result
+
+    if path.suffix == ".jsonl" and not _jsonl_lines_ok(original, masked, findings):
+        result.skipped = "would-break-json"
+        return result
+
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".claude-log-scan-")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", errors="surrogateescape") as fh:
+            fh.write(masked)
+        shutil.copymode(path, tmp)          # 0600 を落とさない
+        os.replace(tmp, path)
+    except OSError:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        result.skipped = "unwritable"
+        return result
+
+    result.changed = True
+    return result
+
+
+def default_roots() -> list[Path]:
+    home = Path.home()
+    claude = home / ".claude"
+    return [
+        claude / "projects",          # 会話トランスクリプト（本体）
+        claude / "history.jsonl",     # 入力プロンプト履歴
+        claude / "shell-snapshots",   # Bash ツール用のシェル環境
+        claude / "file-history",      # 編集前ファイルのスナップショット
+        Path(tempfile.gettempdir()) / f"claude-{os.getuid()}",   # スクラッチパッド
+    ]
+
+
+def iter_targets(roots):
+    """対象ファイルを列挙する。ドットで始まる名前とシンボリックリンクは辿らない。"""
+    for root in roots:
+        root = Path(root)
+        if root.is_symlink() or not root.exists():
+            continue
+        if root.is_file():
+            yield root
+            continue
+        for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+            dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
+            for name in sorted(filenames):
+                if name.startswith("."):
+                    continue
+                p = Path(dirpath) / name
+                if not p.is_symlink() and p.is_file():
+                    yield p
+
+
+# ------------------------------------------------------------------- CLI
+
+def _notify(count: int) -> None:
+    body = f"Claude Code のログに {count} 件の secret 候補を検出しました"
+    try:
+        subprocess.run(
+            ["osascript", "-e",
+             f'display notification "{body}" with title "claude-log-scan"'],
+            check=False, capture_output=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def _short(path: Path) -> str:
+    try:
+        return "~/" + str(path.relative_to(Path.home()))
+    except ValueError:
+        return str(path)
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(
+        prog="claude-log-scan",
+        description="Claude Code のログから secret を検出し、その部分だけマスクする",
+    )
+    ap.add_argument("paths", nargs="*", type=Path,
+                    help="対象（省略時は ~/.claude のログ一式と /tmp のスクラッチパッド）")
+    ap.add_argument("--apply", action="store_true",
+                    help="検出した secret を実際にマスクする（既定はドライラン）")
+    ap.add_argument("--high-only", action="store_true",
+                    help="確度の高いルールのみ。generic-assignment を無視する")
+    ap.add_argument("--min-age-minutes", type=int, default=DEFAULT_MIN_AGE_MINUTES,
+                    help=f"この分数以内に更新されたファイルは書き換えない（既定 {DEFAULT_MIN_AGE_MINUTES}）")
+    ap.add_argument("--max-bytes", type=int, default=DEFAULT_MAX_BYTES,
+                    help="これより大きいファイルは読まない")
+    ap.add_argument("--json", action="store_true", dest="as_json",
+                    help="JSON で出力する")
+    ap.add_argument("--quiet", action="store_true",
+                    help="検出が無ければ何も出力しない")
+    ap.add_argument("--notify", action="store_true",
+                    help="検出時に macOS 通知を出す")
+    args = ap.parse_args(argv)
+
+    roots = args.paths or default_roots()
+    results = [
+        process_file(
+            p,
+            apply=args.apply,
+            min_age_minutes=args.min_age_minutes,
+            max_bytes=args.max_bytes,
+            high_only=args.high_only,
+        )
+        for p in iter_targets(roots)
+    ]
+
+    hits = [r for r in results if r.findings]
+    total = sum(len(r.findings) for r in hits)
+    masked_files = [r for r in results if r.changed]
+    blocked = [r for r in hits if r.skipped]
+
+    if args.as_json:
+        print(json.dumps({
+            "scanned": len(results),
+            "findings": total,
+            "masked_files": len(masked_files),
+            "applied": args.apply,
+            "files": [
+                {
+                    "path": str(r.path),
+                    "changed": r.changed,
+                    "skipped": r.skipped,
+                    "findings": [
+                        {"rule": f.rule, "severity": f.severity,
+                         "line": f.line, "preview": f.preview()}
+                        for f in r.findings
+                    ],
+                }
+                for r in hits
+            ],
+        }, ensure_ascii=False, indent=2))
+    elif total == 0:
+        if not args.quiet:
+            print(f"検出なし（{len(results)} ファイルを走査）")
+    else:
+        for r in hits:
+            note = f"  [skipped: {r.skipped}]" if r.skipped else ""
+            print(f"{_short(r.path)}{note}")
+            for f in r.findings:
+                flag = " " if f.severity == "high" else "?"
+                print(f"  {flag} L{f.line:<6} {f.rule:<22} {f.preview()}")
+        print()
+        if args.apply:
+            print(f"{total} 件検出、{len(masked_files)} ファイルをマスクしました。")
+            if blocked:
+                print(f"うち {len(blocked)} ファイルは書き換えを見送りました"
+                      "（セッション進行中 / JSON が壊れる恐れ）。")
+        else:
+            print(f"{total} 件検出 (dry-run)。'?' 付きは推測なので要確認。")
+            print("書き換えるには --apply を付けてください。")
+
+    if args.notify and total:
+        _notify(total)
+
+    if total and not args.apply:
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -44,5 +44,18 @@ mkdir -p "$HOME/bin"
 ln -sf "$DOTFILES_DIR/bin/ide" "$HOME/bin/ide"
 ln -sf "$DOTFILES_DIR/bin/tmux-clean" "$HOME/bin/tmux-clean"
 ln -sf "$DOTFILES_DIR/bin/sesh-start" "$HOME/bin/sesh-start"
+ln -sf "$DOTFILES_DIR/bin/claude-log-scan" "$HOME/bin/claude-log-scan"
+
+# launchd（plist は $HOME を展開できないので、リンクではなく生成する）
+AGENT="com.shinyaazuma.claude-log-scan"
+AGENT_DIR="$HOME/Library/LaunchAgents"
+mkdir -p "$AGENT_DIR"
+sed "s|__HOME__|$HOME|g" "$DOTFILES_DIR/launchd/$AGENT.plist" > "$AGENT_DIR/$AGENT.plist"
+if launchctl print "gui/$(id -u)/$AGENT" >/dev/null 2>&1; then
+  launchctl bootout "gui/$(id -u)/$AGENT" 2>/dev/null
+fi
+launchctl bootstrap "gui/$(id -u)" "$AGENT_DIR/$AGENT.plist" 2>/dev/null \
+  && echo "loaded: $AGENT（毎日12:30にログを検査して通知）" \
+  || echo "warn: $AGENT の登録に失敗しました"
 
 echo "Done!"

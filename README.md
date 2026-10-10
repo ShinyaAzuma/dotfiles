@@ -104,3 +104,40 @@ brew install sesh zoxide fzf
 | `cmd+w` | ペインを閉じる |
 
 `cmd` 系のため tmux prefix (`Ctrl+t`) と衝突しません。
+
+## claude-log-scan
+
+Claude Code のログに紛れ込んだ secret を検出し、その部分だけをマスクする。
+
+Claude Code は会話のトランスクリプトを `~/.claude/projects/**/*.jsonl` に平文で
+残す。コマンド出力や読んだファイルの中身もそのまま入るので、`.env` を cat した
+だけでアクセスキーがディスク上に半永久的に居座る。
+
+```sh
+claude-log-scan                 # 検出して報告するだけ（既定）
+claude-log-scan --apply         # 検出箇所を [MASKED:<rule>] に置換
+claude-log-scan --high-only     # 確度の高いルールのみ
+claude-log-scan --json          # 機械可読な出力
+```
+
+検査対象は `~/.claude/projects`（トランスクリプト）、`~/.claude/history.jsonl`
+（入力履歴）、`~/.claude/shell-snapshots`、`~/.claude/file-history`、
+`/tmp/claude-$UID`（スクラッチパッド）。バイナリと巨大ファイルは読まない。
+
+マスクは値を `[MASKED:<rule>]` に置換するだけなので、jsonl の JSON としての
+妥当性は保たれ（置換後に全行を検証し、壊れるなら中止する）、`--resume` や
+履歴検索は壊れない。何度かけても結果は変わらない。書き込み中のセッションを
+壊さないよう、5分以内に更新されたファイルは置換しない。
+
+報告には伏せ字しか出さないので、ログを残しても secret は漏れない。
+
+`?` 付きの検出は値の形からの推測。コードの識別子（`cdk.Duration.days(30)`、
+`env.vars.SECRET_KEY`、`someCamelCaseName`）や貼り付けた画像の base64 を
+誤検出しないよう絞ってあるが、代わりに英単語ベースの覚えやすいパスワードは
+取りこぼす。
+
+launchd で毎日 12:30 に検査し、見つかった時だけ通知する（マスクは手動）。
+
+```sh
+python3 -m unittest tests.test_claude_log_scan   # テスト
+```
