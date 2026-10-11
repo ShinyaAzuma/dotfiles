@@ -1,0 +1,40 @@
+onboarding = false
+[ui]
+agent_panel_sort = "spaces"
+
+[theme]
+name = "tokyo-night"
+auto_switch = false
+
+# ===== agent 間ジャンプ（既定は未設定なので割り当て）=====
+[keys]
+focus_agent = "prefix+alt+1..9"     # Ctrl+b → Alt+1..9 で agent#N へ直接ジャンプ
+next_agent = "alt+shift+down"        # Alt+Shift+↓ 次の agent へ（prefix不要・連打可）
+previous_agent = "alt+shift+up"      # Alt+Shift+↑ 前の agent へ
+previous_workspace = "alt+up"        # Alt+↑ 前のワークスペースへ（prefix不要・連打可）
+next_workspace = "alt+down"          # Alt+↓ 次のワークスペースへ
+
+# ===== エージェント起動ショートカット（tmux の Ctrl+t a a / a r / X 相当）=====
+# type = "pane": 新しいペインでコマンドを起動し、終了するとペインが閉じる
+# prefix は Ctrl+b。reload は Ctrl+b → Shift+r（または `herdr server reload-config`）
+
+# Ctrl+b a : Claude (default) を auto mode で起動
+[[keys.command]]
+key = "prefix+a"
+type = "pane"
+command = "claude --permission-mode auto"
+description = "Claude (default) auto"
+
+# Ctrl+b Shift+a : Claude (Rewire) を auto mode で起動
+[[keys.command]]
+key = "prefix+shift+a"
+type = "pane"
+command = "env CLAUDE_CONFIG_DIR=/Users/shinyaazuma/.claude-rewire claude --permission-mode auto"
+description = "Claude (Rewire) auto"
+
+# Ctrl+b Shift+c : Codex を起動
+[[keys.command]]
+key = "prefix+shift+c"
+type = "pane"
+command = "codex -a never"
+description = "Codex"
