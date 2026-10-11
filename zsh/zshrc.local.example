@@ -1,0 +1,16 @@
+# ~/.zshrc.local の雛形
+#
+# この dotfiles は公開リポジトリのため、氏名・メールアドレス・GitHub アカウント名
+# といった個人情報はここに分離する。setup.sh が未作成時のみこの雛形をコピーする
+# （既存ファイルは上書きしない）ので、コピー後に自分の値へ書き換えること。
+
+# gitMain で設定する作業用アカウント
+GIT_WORK_NAME="Your Work Name"
+GIT_WORK_EMAIL="you@example.com"
+
+# gitPri で設定する個人アカウント
+GIT_PRIV_NAME="Your Private Name"
+GIT_PRIV_EMAIL="you@example.org"
+
+# ghpr / ghprw が集計対象にする GitHub アカウント
+export GH_WORK_USER="your-github-login"

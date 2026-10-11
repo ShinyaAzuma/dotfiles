@@ -2,6 +2,25 @@
 
 DOTFILES_DIR="$HOME/dotfiles"
 
+# zsh（個人設定は ~/.zshrc.local に分離するためリポジトリには入れない）
+# 既存の実体ファイルがあればタイムスタンプ付きで退避してからリンクする
+link_zsh() {
+  local src="$1" dest="$2"
+  if [ -e "$dest" ] && [ ! -L "$dest" ]; then
+    mv "$dest" "$dest.bak.$(date +%Y%m%d%H%M%S)"
+    echo "backed up: $dest"
+  fi
+  ln -sf "$src" "$dest"
+}
+link_zsh "$DOTFILES_DIR/zsh/zshrc"    "$HOME/.zshrc"
+link_zsh "$DOTFILES_DIR/zsh/zprofile" "$HOME/.zprofile"
+
+# 個人設定は未作成時のみ雛形を置く（既存の値を潰さない）
+if [ ! -f "$HOME/.zshrc.local" ]; then
+  cp "$DOTFILES_DIR/zsh/zshrc.local.example" "$HOME/.zshrc.local"
+  echo "created: ~/.zshrc.local （自分の値に書き換えてください）"
+fi
+
 # neovim
 ln -sf "$DOTFILES_DIR/nvim" "$HOME/.config/nvim"
 
