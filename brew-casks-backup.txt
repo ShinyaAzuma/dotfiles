@@ -1,0 +1,6 @@
+font-monaspice-nerd-font
+font-noto-sans-symbols-2
+ghostty
+ngrok
+xquartz
+zulu@17
