@@ -1,0 +1,7 @@
+# lazygit 0.62 で、コミット説明エディタの確定キーが alt+enter から
+# meta+enter（macOS では cmd+enter）に変わった。cmd 系は端末が自分で解釈することが多く、
+# Ghostty から lazygit の TUI まで届く保証がない。確実に動く alt+enter を明示的に戻す。
+# Ghostty 側は macos-option-as-alt = true なので option+enter が alt+enter として届く。
+keybinding:
+  universal:
+    confirmInEditor: [<alt+enter>, <ctrl+s>]

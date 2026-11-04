@@ -60,6 +60,18 @@ case "${rewire_cmd}" in
   *) fail "prefix+shift+a は --chrome で Claude in Chrome を有効にする（実際: ${rewire_cmd}）" ;;
 esac
 
+# レビュー用に lazygit をペインで開くキーを用意する
+lazygit_cmd="$(command_for 'prefix+alt+g')"
+
+[ -n "$lazygit_cmd" ] \
+  && ok "prefix+alt+g に起動コマンドがある" \
+  || fail "prefix+alt+g に起動コマンドがある"
+
+case "$lazygit_cmd" in
+  *lazygit*) ok "prefix+alt+g は lazygit を開く" ;;
+  *) fail "prefix+alt+g は lazygit を開く（実際: ${lazygit_cmd}）" ;;
+esac
+
 if [ "$failures" -eq 0 ]; then
   echo "All tests passed."
 else
