@@ -63,6 +63,9 @@ link "$DOTFILES_DIR/herdr/config.toml" "$HOME/.config/herdr/config.toml"
 # ディレクトリ全体はリンクしない（state.yml 等のランタイムファイルが同居するため）
 link "$DOTFILES_DIR/lazygit/config.yml" "$HOME/Library/Application Support/lazygit/config.yml"
 
+# git（差分表示。~/.gitconfig は氏名・メールを持つので触らず XDG 側に置く）
+link "$DOTFILES_DIR/git/config" "$HOME/.config/git/config"
+
 # bin（自作コマンド）
 link "$DOTFILES_DIR/bin/ide" "$HOME/bin/ide"
 link "$DOTFILES_DIR/bin/tmux-clean" "$HOME/bin/tmux-clean"

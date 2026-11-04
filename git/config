@@ -1,0 +1,42 @@
+# ~/.config/git/config に置く差分表示の設定。
+#
+# ~/.gitconfig には氏名・メール（zsh の gitMain / gitPri が書き換える）が入るため
+# 触らない。git は両方を読み、~/.gitconfig が優先される。見た目の設定だけを
+# こちらに分離しておけば、アカウント切り替えと干渉しない。
+
+[core]
+	# delta: 行単位の diff を読みやすく整形する。git diff / show / log に効く
+	pager = delta
+
+[interactive]
+	# git add -p / lazygit の hunk 表示にも効かせる
+	diffFilter = delta --color-only
+
+[delta]
+	line-numbers = true
+	# n / N でファイル間を移動できる
+	navigate = true
+	# herdr のペインは横幅が狭いので横並びにはしない
+	side-by-side = false
+	# 端末が Tokyo Night なので、専用テーマを持たず端末のパレットに合わせる
+	# 変更する場合は delta --list-syntax-themes を参照
+	syntax-theme = base16-256
+
+[diff]
+	# AI のリファクタで「移動しただけ」の行を、追加／削除と区別して色分けする
+	colorMoved = default
+
+# difftastic: 構文木で比較する。インデント変更や関数の移動で
+# 行単位 diff がノイズまみれになるときに使う
+[difftool "difftastic"]
+	cmd = difft "$LOCAL" "$REMOTE"
+
+[difftool]
+	prompt = false
+
+[alias]
+	# git dft            未コミットの変更を構文単位で見る
+	# git dft main...HEAD ブランチ全体を構文単位で見る
+	dft = difftool --tool difftastic
+	# git dftlog         履歴を構文単位で追う
+	dftlog = -c diff.external=difft log --ext-diff -p

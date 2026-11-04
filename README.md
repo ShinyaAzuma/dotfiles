@@ -9,8 +9,13 @@ macOS 向けの個人用 dotfiles です。
 | `zsh/` | zsh 設定（`.zshrc` / `.zprofile`、個人設定は `~/.zshrc.local` に分離） |
 | `nvim/` | Neovim 設定（lazy.nvim によるプラグイン管理） |
 | `tmux.conf` | tmux 設定（Tokyo Night テーマ、vim 風キーバインド） |
-| `lazygit/` | lazygit 設定（コミット確定キーの固定） |
+| `herdr/` | herdr 設定（エージェント・マルチプレクサ。tmux の後継） |
+| `lazygit/` | lazygit 設定（コミット確定キー、delta 連携） |
+| `git/` | git の差分表示設定（delta / difftastic）。`~/.gitconfig` とは分離 |
 | `ghostty/` | Ghostty ターミナル設定 |
+| `bin/` | 自作コマンド |
+| `launchd/` | 定期実行ジョブの plist |
+| `tests/` | 設定の回帰テスト |
 | `setup.sh` | シンボリックリンク作成スクリプト |
 
 ## セットアップ
@@ -29,6 +34,14 @@ chmod +x setup.sh
 - `~/dotfiles/nvim` → `~/.config/nvim`
 - `~/dotfiles/tmux.conf` → `~/.tmux.conf`
 - `~/dotfiles/ghostty` → `~/.config/ghostty`
+- `~/dotfiles/herdr/config.toml` → `~/.config/herdr/config.toml`
+- `~/dotfiles/lazygit/config.yml` → `~/Library/Application Support/lazygit/config.yml`
+- `~/dotfiles/git/config` → `~/.config/git/config`
+- `~/dotfiles/bin/*` → `~/bin/`
+
+`~/.gitconfig` は氏名・メールを持ち、`gitMain` / `gitPri` が書き換えるため触りません。差分表示の設定だけを `~/.config/git/config` に置いて共存させています。
+
+`setup.sh` は launchd ジョブ（`claude-log-scan`）の登録も行います。テストから呼ぶときは `DOTFILES_SKIP_LAUNCHD=1` で抑止してください（`launchctl` は `HOME` ではなく実ユーザーのセッションに作用するため）。
 
 ## 主な特徴
 
@@ -86,7 +99,43 @@ lazygit でコミット説明（本文）を確定するキーは `option + ente
 
 `<leader>` は `Space` です。git 系を `<leader>G`（大文字）にまとめているのは、`<leader>g` が Telescope live_grep に割り当て済みで、`<leader>gX` を足すと live_grep が `timeoutlen` 分待たされるためです。
 
-### tmux
+#### 差分の見た目（delta / difftastic）
+
+| コマンド | 用途 |
+|---|---|
+| `git diff` / `git show` / `git log -p` | delta が整形（行番号・構文色・移動検出） |
+| `git dft` | difftastic で未コミットの変更を構文単位で見る |
+| `git dft main...HEAD` | ブランチ全体を構文単位で見る |
+| `git dftlog` | 履歴を構文単位で追う |
+
+delta は行単位、difftastic は構文木単位で比較します。AI のリファクタはインデント変更や関数の移動を伴いやすく、行単位では差分がノイズまみれになります。そういうときに `git dft` に切り替えると、実際に変わった箇所だけが残ります。
+
+lazygit の差分表示にも delta を通しているので、見た目は揃います。
+
+### herdr
+
+エージェント・マルチプレクサです。tmux から移行し、現在はこちらを使っています。設定は `herdr/config.toml`。
+
+プレフィックスキーは `Ctrl+b` です。設定を変えたら `Ctrl+b` → `Shift+R`、またはシェルから `herdr server reload-config` で反映します。
+
+| キー | 動作 |
+|---|---|
+| `prefix + a` | Claude Code（個人アカウント）を auto mode で起動 |
+| `prefix + Shift+A` | Claude Code（Rewire）を auto mode で起動（`--chrome` 付き） |
+| `prefix + Shift+C` | Codex を起動 |
+| `prefix + alt + g` | lazygit をペインで開く |
+| `prefix + alt + 1..9` | N 番目の agent へ直接ジャンプ |
+| `Alt + Shift + ↑/↓` | 前 / 次の agent へ（prefix 不要・連打可） |
+| `Alt + ↑/↓` | 前 / 次のワークスペースへ（prefix 不要・連打可） |
+
+Rewire 側の起動に `--chrome` を付けているのは、`claudeInChromeDefaultEnabled` の設定に依存せず Claude in Chrome へ繋がるようにするためです。
+
+`herdr worktree` で git worktree を切ってエージェントを隔離し、自分は元のブランチのペインで比較する、という使い方もできます。
+
+### tmux（凍結）
+
+herdr へ移行済みで、現在は使っていません。設定は参照用に残してあります。
+
 - プレフィックスキー: `Ctrl+t`
 - vim 風ペイン移動 (`h/j/k/l`)
 - Lazygit ポップアップ (`prefix + g`)
@@ -95,7 +144,9 @@ lazygit でコミット説明（本文）を確定するキーは `option + ente
 - セッション永続化 — tmux-resurrect / tmux-continuum で再起動後も前回のセッションを自動復元（15分ごと自動保存）
 - Tokyo Night テーマ (TPM)
 
-### プロジェクトランチャー（sesh + zoxide + fzf）
+### プロジェクトランチャー（sesh + zoxide + fzf、凍結）
+
+上の tmux 設定の一部です。herdr へ移行したため自動起動は無効化してあり、現在は使っていません。
 
 `prefix + o` で、実行中の tmux セッション・`zoxide` の訪問履歴・`sesh/sesh.toml` の定義をまとめて曖昧検索し、選んだプロジェクトを tmux セッションとして起動（既存なら復帰）します。
 
