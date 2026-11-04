@@ -1,0 +1,7 @@
+# arm64 Homebrew を最優先に（/usr/local(x86_64) より前に置く）
+eval "$(/opt/homebrew/bin/brew shellenv)"
+
+export PATH=$HOME/.nodebrew/current/bin:$PATH
+export PYENV_ROOT="$HOME/.pyenv"
+export PATH="$PYENV_ROOT/bin:$PATH"
+eval "$(pyenv init --path)"

@@ -1,0 +1,229 @@
+# Powerlevel10kのインスタントプロンプト設定（最上部に配置する必要あり）
+if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
+  source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
+fi
+
+# Powerlevel10k テーマ
+source ~/.zsh/powerlevel10k/powerlevel10k.zsh-theme
+[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
+typeset -g POWERLEVEL9K_INSTANT_PROMPT=quiet
+
+# --- 個人設定（リポジトリ管理外） ---
+# この dotfiles は公開リポジトリなので、氏名・メール・アカウント名は
+# ~/.zshrc.local に逃がす。雛形は zsh/zshrc.local.example。
+[ -f ~/.zshrc.local ] && source ~/.zshrc.local
+
+# --- 遅延読み込み: conda ---
+conda() {
+  unfunction conda
+  __conda_setup="$("$HOME/opt/anaconda3/bin/conda" 'shell.zsh' 'hook' 2> /dev/null)"
+  if [ $? -eq 0 ]; then
+      eval "$__conda_setup"
+  else
+      if [ -f "$HOME/opt/anaconda3/etc/profile.d/conda.sh" ]; then
+          . "$HOME/opt/anaconda3/etc/profile.d/conda.sh"
+      else
+          export PATH="$HOME/opt/anaconda3/bin:$PATH"
+      fi
+  fi
+  unset __conda_setup
+  conda "$@"
+}
+
+# --- 遅延読み込み: nvm ---
+export NVM_DIR="$HOME/.nvm"
+nvm() {
+  unfunction nvm
+  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+  [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+  nvm "$@"
+}
+# node/npm/npx を使ったときにも nvm を自動読み込み
+node() { unfunction node npm npx 2>/dev/null; nvm use default >/dev/null 2>&1; command node "$@"; }
+npm()  { unfunction node npm npx 2>/dev/null; nvm use default >/dev/null 2>&1; command npm "$@"; }
+npx()  { unfunction node npm npx 2>/dev/null; nvm use default >/dev/null 2>&1; command npx "$@"; }
+
+# pyenv
+eval "$(pyenv init -)"
+
+# direnv
+eval "$(direnv hook zsh)"
+
+# rbenv（1回のみ）
+export PATH="$HOME/.rbenv/bin:$PATH"
+eval "$(rbenv init -)"
+
+# PATH設定
+export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
+export PATH="$HOME/.local/bin:$PATH"
+export PATH="$HOME/.codeium/windsurf/bin:$PATH"
+export PATH="$HOME/.nvm/versions/node/v$(cat $NVM_DIR/alias/default 2>/dev/null)/bin:$PATH"
+export PATH=$PATH:$ANDROID_HOME/platform-tools
+
+# 環境変数
+# エディタは nvim（システムvimは +clipboard 非対応でヤンクがコピーされないため）
+export EDITOR=nvim
+export VISUAL=nvim
+export ANDROID_HOME=$HOME/Library/Android/sdk
+export GODEBUG=asyncpreemptoff=1
+export DOCKER_HOST=unix://$HOME/.docker/run/docker.sock
+
+# Google Cloud SDK
+if [ -f "$HOME/Downloads/google-cloud-sdk/path.zsh.inc" ]; then . "$HOME/Downloads/google-cloud-sdk/path.zsh.inc"; fi
+if [ -f "$HOME/Downloads/google-cloud-sdk/completion.zsh.inc" ]; then . "$HOME/Downloads/google-cloud-sdk/completion.zsh.inc"; fi
+
+# Git設定切り替え
+function gitMain() {
+  git config --global user.name "$GIT_WORK_NAME"
+  git config --global user.email "$GIT_WORK_EMAIL"
+  git config --list
+}
+
+function gitPri() {
+  git config --global user.name "$GIT_PRIV_NAME"
+  git config --global user.email "$GIT_PRIV_EMAIL"
+  git config --list
+}
+
+# エイリアス
+alias h2='$(npm prefix -s)/node_modules/.bin/shopify hydrogen'
+alias vim=nvim
+export PATH="$HOME/bin:$PATH"
+
+# fzf（先に読み込む）
+[ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
+
+# タブでオートコンプリート
+autoload -Uz compinit && compinit
+
+# 大文字小文字を区別しない
+zstyle ':completion:*' matcher-list 'm:{a-z}={A-Z}'
+
+# cdで補完候補を表示
+setopt AUTO_CD
+
+# タブで候補をメニュー表示
+zstyle ':completion:*' menu select
+
+
+# プレビュー表示（ディレクトリの中身を表示）
+zstyle ':fzf-tab:complete:cd:*' fzf-preview 'ls -la $realpath'
+
+# git関連のプレビュー
+zstyle ':fzf-tab:complete:git-(add|diff|restore):*' fzf-preview 'git diff $word | head -100'
+
+# 最小高さ
+zstyle ':fzf-tab:*' fzf-min-height 20
+source ~/.oh-my-zsh/custom/plugins/fzf-tab/fzf-tab.plugin.zsh
+
+# zoxide（訪れたディレクトリを頻度順に記憶。`z <名前>` でジャンプ、`zi` で対話選択）
+eval "$(zoxide init zsh)"
+
+
+# === ghpr: GitHub PR/Issue 日次集計 ===
+ghpr() {
+  local offset=${1:-0}
+  local day=$(date -v-${offset}d "+%Y-%m-%d")
+
+  if [[ -z "${GH_WORK_USER:-}" ]]; then
+    print -r -- "⚠️ GH_WORK_USER が未設定です。~/.zshrc.local で設定してください。"
+    return 1
+  fi
+
+  local prev_account=$(gh api user --jq .login 2>/dev/null)
+  if [[ $prev_account != "${GH_WORK_USER}" ]]; then
+    gh auth switch --user "$GH_WORK_USER" >/dev/null 2>&1 || {
+      print -r -- "⚠️ $GH_WORK_USER への切り替えに失敗しました。"
+      return 1
+    }
+  fi
+
+  print -r -- "# PR集計: $day"
+
+  # 作業アカウントが作成 or アサインされた PR を全リポジトリ横断で検索。
+  # その日に動きがあったものだけを対象: オープンは updated:$day(当日更新)、
+  # マージ済みは merged-at:$day。1 リストに統合し、
+  # リポジトリ単位(nameWithOwner + number)で重複排除してリポジトリ別に表示。
+  {
+    gh search prs --author   "$GH_WORK_USER" --state open --updated "$day" --limit 100 --json number,title,url,isDraft,repository \
+      | jq -c '.[] | . + {kind: (if .isDraft then "draft" else "open" end)}'
+    gh search prs --assignee "$GH_WORK_USER" --state open --updated "$day" --limit 100 --json number,title,url,isDraft,repository \
+      | jq -c '.[] | . + {kind: (if .isDraft then "draft" else "open" end)}'
+    gh search prs --author   "$GH_WORK_USER" --merged-at "$day" --limit 100 --json number,title,url,repository \
+      | jq -c '.[] | . + {kind: "merged"}'
+    gh search prs --assignee "$GH_WORK_USER" --merged-at "$day" --limit 100 --json number,title,url,repository \
+      | jq -c '.[] | . + {kind: "merged"}'
+  } | jq -s -r '
+      unique_by([.repository.nameWithOwner, .number])
+      | group_by(.repository.nameWithOwner)[]
+      | "**\(.[0].repository.nameWithOwner)**",
+        ( .[]
+          | if   .kind == "draft"  then "- :git-pull-request-draft: #\(.number) [\(.title)](\(.url))"
+            elif .kind == "merged" then "- :git-merge: #\(.number) [\(.title)](\(.url))"
+            else                        "- :git-pull-request: #\(.number) [\(.title)](\(.url))" end ),
+        ""
+    '
+
+  if [[ -n $prev_account && $prev_account != "${GH_WORK_USER}" ]]; then
+    gh auth switch --user "$prev_account" >/dev/null 2>&1
+  fi
+}
+
+# === ghprw: GitHub PR 週次集計 ===
+# 引数なしで「直近7日間」を集計。第1引数に週オフセットを渡すと過去にさかのぼる
+# (例: ghprw 1 → 先週の7日間)。日付範囲は GitHub 検索の "開始..終了" 構文を利用。
+ghprw() {
+  local offset=${1:-0}
+  local end=$(date -v-$((offset * 7))d "+%Y-%m-%d")
+  local start=$(date -v-$((offset * 7 + 6))d "+%Y-%m-%d")
+  local range="$start..$end"
+
+  if [[ -z "${GH_WORK_USER:-}" ]]; then
+    print -r -- "⚠️ GH_WORK_USER が未設定です。~/.zshrc.local で設定してください。"
+    return 1
+  fi
+
+  local prev_account=$(gh api user --jq .login 2>/dev/null)
+  if [[ $prev_account != "${GH_WORK_USER}" ]]; then
+    gh auth switch --user "$GH_WORK_USER" >/dev/null 2>&1 || {
+      print -r -- "⚠️ $GH_WORK_USER への切り替えに失敗しました。"
+      return 1
+    }
+  fi
+
+  print -r -- "# PR集計: $start 〜 $end"
+
+  # 作業アカウントが作成 or アサインされた PR を全リポジトリ横断で検索。
+  # 期間中に動きがあったものを対象: オープンは updated、マージ済みは merged-at を
+  # 範囲指定。1 リストに統合し、リポジトリ単位で重複排除してリポジトリ別に表示。
+  {
+    gh search prs --author   "$GH_WORK_USER" --state open --updated "$range" --limit 100 --json number,title,url,isDraft,repository \
+      | jq -c '.[] | . + {kind: (if .isDraft then "draft" else "open" end)}'
+    gh search prs --assignee "$GH_WORK_USER" --state open --updated "$range" --limit 100 --json number,title,url,isDraft,repository \
+      | jq -c '.[] | . + {kind: (if .isDraft then "draft" else "open" end)}'
+    gh search prs --author   "$GH_WORK_USER" --merged-at "$range" --limit 100 --json number,title,url,repository \
+      | jq -c '.[] | . + {kind: "merged"}'
+    gh search prs --assignee "$GH_WORK_USER" --merged-at "$range" --limit 100 --json number,title,url,repository \
+      | jq -c '.[] | . + {kind: "merged"}'
+  } | jq -s -r '
+      unique_by([.repository.nameWithOwner, .number])
+      | group_by(.repository.nameWithOwner)[]
+      | "**\(.[0].repository.nameWithOwner)**",
+        ( .[]
+          | if   .kind == "draft"  then "- :git-pull-request-draft: #\(.number) [\(.title)](\(.url))"
+            elif .kind == "merged" then "- :git-merge: #\(.number) [\(.title)](\(.url))"
+            else                        "- :git-pull-request: #\(.number) [\(.title)](\(.url))" end ),
+        ""
+    '
+
+  if [[ -n $prev_account && $prev_account != "${GH_WORK_USER}" ]]; then
+    gh auth switch --user "$prev_account" >/dev/null 2>&1
+  fi
+}
+
+# ===== tmux: 起動時に sesh ピッカーを自動表示（herdr移行に伴い無効化 2026-07-03）=====
+# herdr へ完全移行したため自動表示は停止。使う時は手動で `herdr`（tmuxに戻すには下を復活）。
+# if [[ $- == *i* ]] && [[ -z "$TMUX" ]] && [[ -z "$SESH_AUTOSTARTED" ]]; then
+#   export SESH_AUTOSTARTED=1
+#   command -v sesh-start >/dev/null 2>&1 && sesh-start
+# fi
