@@ -26,10 +26,12 @@ command = "claude --permission-mode auto"
 description = "Claude (default) auto"
 
 # Ctrl+b Shift+a : Claude (Rewire) を auto mode で起動
+# --chrome は Claude in Chrome を明示的に有効にする。Rewire 側の .claude.json にある
+# claudeInChromeDefaultEnabled に依存せず繋がるようにしておく（default 側は true 済み）
 [[keys.command]]
 key = "prefix+shift+a"
 type = "pane"
-command = "env CLAUDE_CONFIG_DIR=/Users/shinyaazuma/.claude-rewire claude --permission-mode auto"
+command = "env CLAUDE_CONFIG_DIR=/Users/shinyaazuma/.claude-rewire claude --permission-mode auto --chrome"
 description = "Claude (Rewire) auto"
 
 # Ctrl+b Shift+c : Codex を起動
