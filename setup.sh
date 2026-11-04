@@ -22,16 +22,18 @@ link() {
   ln -sfn "$src" "$dest" || { failures=$((failures + 1)); return 1; }
 }
 
-# zsh（個人設定は ~/.zshrc.local に分離するためリポジトリには入れない）
-# 既存の実体ファイルがあればタイムスタンプ付きで退避してからリンクする
+# zsh だけは、既存の実体ファイルを黙って消さずタイムスタンプ付きで退避する。
+# ~/.zshrc には手で書き足した内容が残っていることがあるため。
 link_zsh() {
   local src="$1" dest="$2"
   if [ -e "$dest" ] && [ ! -L "$dest" ]; then
     mv "$dest" "$dest.bak.$(date +%Y%m%d%H%M%S)"
     echo "backed up: $dest"
   fi
-  ln -sf "$src" "$dest"
+  link "$src" "$dest"
 }
+
+# zsh（個人設定は ~/.zshrc.local に分離するためリポジトリには入れない）
 link_zsh "$DOTFILES_DIR/zsh/zshrc"    "$HOME/.zshrc"
 link_zsh "$DOTFILES_DIR/zsh/zprofile" "$HOME/.zprofile"
 
@@ -59,13 +61,31 @@ link "$DOTFILES_DIR/herdr/config.toml" "$HOME/.config/herdr/config.toml"
 
 # lazygit（差分レビュー）
 # ディレクトリ全体はリンクしない（state.yml 等のランタイムファイルが同居するため）
-mkdir -p "$HOME/Library/Application Support/lazygit"
-ln -sf "$DOTFILES_DIR/lazygit/config.yml" "$HOME/Library/Application Support/lazygit/config.yml"
+link "$DOTFILES_DIR/lazygit/config.yml" "$HOME/Library/Application Support/lazygit/config.yml"
 
 # bin（自作コマンド）
 link "$DOTFILES_DIR/bin/ide" "$HOME/bin/ide"
 link "$DOTFILES_DIR/bin/tmux-clean" "$HOME/bin/tmux-clean"
 link "$DOTFILES_DIR/bin/sesh-start" "$HOME/bin/sesh-start"
+link "$DOTFILES_DIR/bin/claude-log-scan" "$HOME/bin/claude-log-scan"
+
+# launchd（plist は $HOME を展開できないので、リンクではなく生成する）
+#
+# launchctl は HOME ではなく実ユーザーのセッションに作用する。HOME を差し替えた
+# サンドボックス（tests/setup_test.sh）から呼ぶと本物のエージェントが登録されて
+# しまうため、テストからは DOTFILES_SKIP_LAUNCHD=1 で抑止する。
+if [ -z "${DOTFILES_SKIP_LAUNCHD:-}" ]; then
+  AGENT="com.shinyaazuma.claude-log-scan"
+  AGENT_DIR="$HOME/Library/LaunchAgents"
+  mkdir -p "$AGENT_DIR"
+  sed "s|__HOME__|$HOME|g" "$DOTFILES_DIR/launchd/$AGENT.plist" > "$AGENT_DIR/$AGENT.plist"
+  if launchctl print "gui/$(id -u)/$AGENT" >/dev/null 2>&1; then
+    launchctl bootout "gui/$(id -u)/$AGENT" 2>/dev/null
+  fi
+  launchctl bootstrap "gui/$(id -u)" "$AGENT_DIR/$AGENT.plist" 2>/dev/null \
+    && echo "loaded: $AGENT（毎日12:30にログを検査して通知）" \
+    || echo "warn: $AGENT の登録に失敗しました"
+fi
 
 if [ "$failures" -gt 0 ]; then
   echo "Done（$failures 件リンクできませんでした）"

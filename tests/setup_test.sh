@@ -19,14 +19,18 @@ fail() { printf '  FAIL - %s\n' "$1"; failed=1; }
 make_sandbox() {
   local home; home=$(mktemp -d)
   local d="$home/dotfiles"
-  mkdir -p "$d/nvim" "$d/ghostty" "$d/sesh" "$d/herdr" "$d/bin"
+  mkdir -p "$d/nvim" "$d/ghostty" "$d/sesh" "$d/herdr" "$d/bin" "$d/zsh" "$d/lazygit" "$d/launchd"
   touch "$d/tmux.conf" "$d/sesh/sesh.toml" "$d/herdr/config.toml"
-  touch "$d/bin/ide" "$d/bin/tmux-clean" "$d/bin/sesh-start"
+  touch "$d/bin/ide" "$d/bin/tmux-clean" "$d/bin/sesh-start" "$d/bin/claude-log-scan"
+  touch "$d/zsh/zshrc" "$d/zsh/zprofile" "$d/lazygit/config.yml"
+  printf 'GIT_WORK_NAME="Your Work Name"\n' > "$d/zsh/zshrc.local.example"
   cp "$SETUP" "$d/setup.sh"
   printf '%s' "$home"
 }
 
-run_setup() { env HOME="$1" bash "$1/dotfiles/setup.sh" >/dev/null 2>&1; }
+# launchctl は HOME ではなく実ユーザーのセッションに作用する。抑止しないと
+# テストを回すたびに本物の launchd エージェントが登録されてしまう。
+run_setup() { env HOME="$1" DOTFILES_SKIP_LAUNCHD=1 bash "$1/dotfiles/setup.sh" >/dev/null 2>&1; }
 
 assert_link() {
   local label="$1" dest="$2" want="$3"
@@ -44,6 +48,34 @@ assert_link "tmux.conf をリンクする"                        "$HOME_A/.tmux
 assert_link "sesh.toml をリンクする"                        "$HOME_A/.config/sesh/sesh.toml"   "$HOME_A/dotfiles/sesh/sesh.toml"
 assert_link "herdr config.toml をリンクする"                "$HOME_A/.config/herdr/config.toml" "$HOME_A/dotfiles/herdr/config.toml"
 assert_link "bin/ide をリンクする"                          "$HOME_A/bin/ide"            "$HOME_A/dotfiles/bin/ide"
+assert_link "bin/claude-log-scan をリンクする"              "$HOME_A/bin/claude-log-scan" "$HOME_A/dotfiles/bin/claude-log-scan"
+assert_link "lazygit config.yml をリンクする"               "$HOME_A/Library/Application Support/lazygit/config.yml" "$HOME_A/dotfiles/lazygit/config.yml"
+assert_link ".zshrc をリンクする"                           "$HOME_A/.zshrc"             "$HOME_A/dotfiles/zsh/zshrc"
+assert_link ".zprofile をリンクする"                        "$HOME_A/.zprofile"          "$HOME_A/dotfiles/zsh/zprofile"
+[ -f "$HOME_A/.zshrc.local" ] && ok "~/.zshrc.local の雛形を置く" || fail "~/.zshrc.local の雛形を置く"
+
+echo
+echo "launchd エージェントに触らない（テスト実行の副作用を防ぐ）"
+# ガードが外れると、HOME を差し替えても実ユーザーのセッションに登録されてしまう
+HOME_L=$(make_sandbox)
+run_setup "$HOME_L"
+[ -e "$HOME_L/Library/LaunchAgents/com.shinyaazuma.claude-log-scan.plist" ] \
+  && fail "DOTFILES_SKIP_LAUNCHD=1 でも plist を生成してしまった" \
+  || ok "DOTFILES_SKIP_LAUNCHD=1 なら plist を生成しない"
+rm -rf "$HOME_L"
+
+echo
+echo "既存の実体 ~/.zshrc を退避してからリンクする"
+HOME_Z=$(make_sandbox)
+printf 'export MY_OWN_SETTING=1\n' > "$HOME_Z/.zshrc"
+run_setup "$HOME_Z"
+assert_link ".zshrc を張り替える" "$HOME_Z/.zshrc" "$HOME_Z/dotfiles/zsh/zshrc"
+if ls "$HOME_Z"/.zshrc.bak.* >/dev/null 2>&1 && grep -q MY_OWN_SETTING "$HOME_Z"/.zshrc.bak.*; then
+  ok "既存の ~/.zshrc を退避する"
+else
+  fail "既存の ~/.zshrc を退避していない"
+fi
+rm -rf "$HOME_Z"
 
 echo
 echo "既にディレクトリへのリンクが張られている状態での再実行"
