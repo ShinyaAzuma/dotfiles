@@ -20,6 +20,11 @@ ln -sf "$DOTFILES_DIR/sesh/sesh.toml" "$HOME/.config/sesh/sesh.toml"
 mkdir -p "$HOME/.config/herdr"
 ln -sf "$DOTFILES_DIR/herdr/config.toml" "$HOME/.config/herdr/config.toml"
 
+# lazygit（差分レビュー）
+# ディレクトリ全体はリンクしない（state.yml 等のランタイムファイルが同居するため）
+mkdir -p "$HOME/Library/Application Support/lazygit"
+ln -sf "$DOTFILES_DIR/lazygit/config.yml" "$HOME/Library/Application Support/lazygit/config.yml"
+
 # bin（自作コマンド）
 mkdir -p "$HOME/bin"
 ln -sf "$DOTFILES_DIR/bin/ide" "$HOME/bin/ide"

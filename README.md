@@ -8,6 +8,7 @@ macOS 向けの個人用 dotfiles です。
 |---|---|
 | `nvim/` | Neovim 設定（lazy.nvim によるプラグイン管理） |
 | `tmux.conf` | tmux 設定（Tokyo Night テーマ、vim 風キーバインド） |
+| `lazygit/` | lazygit 設定（コミット確定キーの固定） |
 | `ghostty/` | Ghostty ターミナル設定 |
 | `setup.sh` | シンボリックリンク作成スクリプト |
 
@@ -50,6 +51,10 @@ chmod +x setup.sh
 | `<leader>hb` | 行の blame を表示 |
 
 herdr 側では `prefix + alt + g` でも lazygit をペインで開けます（エージェントの隣に並べる用）。
+
+lazygit でコミット説明（本文）を確定するキーは `option + enter` です。lazygit 0.62 で既定が
+`cmd + enter` に変わりましたが、`cmd` 系は端末が自分で解釈するため TUI まで届く保証がなく、
+`lazygit/config.yml` で `alt + enter`（控えに `ctrl + s`）へ明示的に戻しています。
 
 `<leader>` は `Space` です。git 系を `<leader>G`（大文字）にまとめているのは、`<leader>g` が Telescope live_grep に割り当て済みで、`<leader>gX` を足すと live_grep が `timeoutlen` 分待たされるためです。
 
