@@ -25,6 +25,7 @@ brew "cloudflared"
 # GNU File, Shell, and Text utilities
 brew "coreutils"
 # Load/unload environment variables based on $PWD
+brew "difftastic"
 brew "direnv"
 # Official Go implementation of the Ethereum protocol
 brew "ethereum"
@@ -37,6 +38,7 @@ brew "gawk"
 # GitHub command-line tool
 brew "gh"
 # Git extension for versioning large files
+brew "git-delta"
 brew "git-lfs"
 # Open-source GitLab command-line tool
 brew "glab"

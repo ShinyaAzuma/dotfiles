@@ -19,10 +19,10 @@ fail() { printf '  FAIL - %s\n' "$1"; failed=1; }
 make_sandbox() {
   local home; home=$(mktemp -d)
   local d="$home/dotfiles"
-  mkdir -p "$d/nvim" "$d/ghostty" "$d/sesh" "$d/herdr" "$d/bin" "$d/zsh" "$d/lazygit" "$d/launchd"
+  mkdir -p "$d/nvim" "$d/ghostty" "$d/sesh" "$d/herdr" "$d/bin" "$d/zsh" "$d/lazygit" "$d/launchd" "$d/git"
   touch "$d/tmux.conf" "$d/sesh/sesh.toml" "$d/herdr/config.toml"
   touch "$d/bin/ide" "$d/bin/tmux-clean" "$d/bin/sesh-start" "$d/bin/claude-log-scan"
-  touch "$d/zsh/zshrc" "$d/zsh/zprofile" "$d/lazygit/config.yml"
+  touch "$d/zsh/zshrc" "$d/zsh/zprofile" "$d/lazygit/config.yml" "$d/git/config"
   printf 'GIT_WORK_NAME="Your Work Name"\n' > "$d/zsh/zshrc.local.example"
   cp "$SETUP" "$d/setup.sh"
   printf '%s' "$home"
@@ -50,6 +50,7 @@ assert_link "herdr config.toml をリンクする"                "$HOME_A/.conf
 assert_link "bin/ide をリンクする"                          "$HOME_A/bin/ide"            "$HOME_A/dotfiles/bin/ide"
 assert_link "bin/claude-log-scan をリンクする"              "$HOME_A/bin/claude-log-scan" "$HOME_A/dotfiles/bin/claude-log-scan"
 assert_link "lazygit config.yml をリンクする"               "$HOME_A/Library/Application Support/lazygit/config.yml" "$HOME_A/dotfiles/lazygit/config.yml"
+assert_link "git/config をリンクする"                       "$HOME_A/.config/git/config" "$HOME_A/dotfiles/git/config"
 assert_link ".zshrc をリンクする"                           "$HOME_A/.zshrc"             "$HOME_A/dotfiles/zsh/zshrc"
 assert_link ".zprofile をリンクする"                        "$HOME_A/.zprofile"          "$HOME_A/dotfiles/zsh/zprofile"
 [ -f "$HOME_A/.zshrc.local" ] && ok "~/.zshrc.local の雛形を置く" || fail "~/.zshrc.local の雛形を置く"

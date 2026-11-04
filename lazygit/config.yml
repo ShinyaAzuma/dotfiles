@@ -5,3 +5,14 @@
 keybinding:
   universal:
     confirmInEditor: [<alt+enter>, <ctrl+s>]
+
+# 差分の見た目を git 側（~/.config/git/config）と揃える。
+# --paging=never は lazygit が自前でスクロールを持つため。
+#
+# キーは pagers（リスト）。旧形式の paging（マップ）で書くと lazygit が起動時に
+# 設定ファイルをその場で書き換えて移行する。このファイルは dotfiles からの
+# symlink なので、書き換えられるとリポジトリに差分が出てしまう。
+git:
+  pagers:
+    - colorArg: always
+      pager: delta --dark --paging=never
