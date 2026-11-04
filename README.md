@@ -9,6 +9,7 @@ macOS 向けの個人用 dotfiles です。
 | `zsh/` | zsh 設定（`.zshrc` / `.zprofile`、個人設定は `~/.zshrc.local` に分離） |
 | `nvim/` | Neovim 設定（lazy.nvim によるプラグイン管理） |
 | `tmux.conf` | tmux 設定（Tokyo Night テーマ、vim 風キーバインド） |
+| `lazygit/` | lazygit 設定（コミット確定キーの固定） |
 | `ghostty/` | Ghostty ターミナル設定 |
 | `setup.sh` | シンボリックリンク作成スクリプト |
 
@@ -59,6 +60,31 @@ zsh zsh/test/path_test.zsh    # PATH 解決の回帰
 ### Neovim
 - lazy.nvim によるプラグイン管理
 - LSP / Treesitter / fzf / oil.nvim など
+- git レビュー: gitsigns / diffview / lazygit
+
+### コードレビュー（AI が書いた差分を読む）
+
+エージェントの変更を自分で確認するための導線です。流し見は lazygit、ブランチ単位の通読は diffview を使います。
+
+| キー | 動作 |
+|---|---|
+| `<leader>Gw` | 未コミットの変更を diffview で開く（AI が書いた直後の確認） |
+| `<leader>Gd` | `main...HEAD` を diffview で開く（PR 単位の通読） |
+| `<leader>Gf` | 現在のファイルの変更履歴 |
+| `<leader>Gq` | diffview を閉じる |
+| `<leader>Gg` | lazygit を開く（hunk 単位で stage / discard） |
+| `]c` / `[c` | 次 / 前の hunk へ（diffview の差分内では組み込み動作を維持） |
+| `<leader>hp` | hunk をプレビュー |
+| `<leader>hr` | hunk を取り消す（ビジュアル選択時は選択範囲のみ） |
+| `<leader>hb` | 行の blame を表示 |
+
+herdr 側では `prefix + alt + g` でも lazygit をペインで開けます（エージェントの隣に並べる用）。
+
+lazygit でコミット説明（本文）を確定するキーは `option + enter` です。lazygit 0.62 で既定が
+`cmd + enter` に変わりましたが、`cmd` 系は端末が自分で解釈するため TUI まで届く保証がなく、
+`lazygit/config.yml` で `alt + enter`（控えに `ctrl + s`）へ明示的に戻しています。
+
+`<leader>` は `Space` です。git 系を `<leader>G`（大文字）にまとめているのは、`<leader>g` が Telescope live_grep に割り当て済みで、`<leader>gX` を足すと live_grep が `timeoutlen` 分待たされるためです。
 
 ### tmux
 - プレフィックスキー: `Ctrl+t`
