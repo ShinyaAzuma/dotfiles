@@ -79,5 +79,22 @@ print -r -- "== 3. 個人設定が未投入でも壊れないこと =="
     || { print "  FAIL - 案内メッセージがない: $out"; exit 1 }
 ) || failed=1
 
+print -r -- "== 4. PR 集計の取得上限 =="
+
+# ghpr / ghprw は 4 本の gh search prs を結合する。--limit の既定は 30、
+# 明示していても 100 では週 100 件超のマージを取りこぼす（実測 181 件/週）。
+# 1000 は GitHub Search API のハードリミットで、gh もこれを超えると
+# 「--limit must be between 1 and 1000」で失敗する。
+search_count=$(grep -c 'gh search prs' "$ZSHRC")
+assert_eq "gh search prs の呼び出しが 8 本ある" "8" "$search_count"
+
+under_limit=$(grep -n 'gh search prs' "$ZSHRC" | grep -v -- '--limit 1000')
+if [[ -z "$under_limit" ]]; then
+  ok "すべての検索が --limit 1000 を指定している"
+else
+  fail "--limit 1000 を指定していない検索がある"
+  print -r -- "$under_limit"
+fi
+
 print -r -- ""
 if (( failed )); then print -r -- "FAILED"; exit 1; else print -r -- "All tests passed."; fi
