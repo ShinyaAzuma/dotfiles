@@ -147,14 +147,17 @@ ghpr() {
   # その日に動きがあったものだけを対象: オープンは updated:$day(当日更新)、
   # マージ済みは merged-at:$day。1 リストに統合し、
   # リポジトリ単位(nameWithOwner + number)で重複排除してリポジトリ別に表示。
+  #
+  # --limit は GitHub Search API のハードリミットである 1000 を指定する（既定は 30、
+  # gh はこれを超えると失敗する）。1000 件を超える期間は日付を分割するしかない。
   {
-    gh search prs --author   "$GH_WORK_USER" --state open --updated "$day" --limit 100 --json number,title,url,isDraft,repository \
+    gh search prs --author   "$GH_WORK_USER" --state open --updated "$day" --limit 1000 --json number,title,url,isDraft,repository \
       | jq -c '.[] | . + {kind: (if .isDraft then "draft" else "open" end)}'
-    gh search prs --assignee "$GH_WORK_USER" --state open --updated "$day" --limit 100 --json number,title,url,isDraft,repository \
+    gh search prs --assignee "$GH_WORK_USER" --state open --updated "$day" --limit 1000 --json number,title,url,isDraft,repository \
       | jq -c '.[] | . + {kind: (if .isDraft then "draft" else "open" end)}'
-    gh search prs --author   "$GH_WORK_USER" --merged-at "$day" --limit 100 --json number,title,url,repository \
+    gh search prs --author   "$GH_WORK_USER" --merged-at "$day" --limit 1000 --json number,title,url,repository \
       | jq -c '.[] | . + {kind: "merged"}'
-    gh search prs --assignee "$GH_WORK_USER" --merged-at "$day" --limit 100 --json number,title,url,repository \
+    gh search prs --assignee "$GH_WORK_USER" --merged-at "$day" --limit 1000 --json number,title,url,repository \
       | jq -c '.[] | . + {kind: "merged"}'
   } | jq -s -r '
       unique_by([.repository.nameWithOwner, .number])
@@ -199,14 +202,17 @@ ghprw() {
   # 作業アカウントが作成 or アサインされた PR を全リポジトリ横断で検索。
   # 期間中に動きがあったものを対象: オープンは updated、マージ済みは merged-at を
   # 範囲指定。1 リストに統合し、リポジトリ単位で重複排除してリポジトリ別に表示。
+  #
+  # --limit は 1000（Search API のハードリミット）。100 ではマージ済みが週 100 件を
+  # 超えた時点で黙って切り捨てられる。週 1000 件を超えたら日付を分割する。
   {
-    gh search prs --author   "$GH_WORK_USER" --state open --updated "$range" --limit 100 --json number,title,url,isDraft,repository \
+    gh search prs --author   "$GH_WORK_USER" --state open --updated "$range" --limit 1000 --json number,title,url,isDraft,repository \
       | jq -c '.[] | . + {kind: (if .isDraft then "draft" else "open" end)}'
-    gh search prs --assignee "$GH_WORK_USER" --state open --updated "$range" --limit 100 --json number,title,url,isDraft,repository \
+    gh search prs --assignee "$GH_WORK_USER" --state open --updated "$range" --limit 1000 --json number,title,url,isDraft,repository \
       | jq -c '.[] | . + {kind: (if .isDraft then "draft" else "open" end)}'
-    gh search prs --author   "$GH_WORK_USER" --merged-at "$range" --limit 100 --json number,title,url,repository \
+    gh search prs --author   "$GH_WORK_USER" --merged-at "$range" --limit 1000 --json number,title,url,repository \
       | jq -c '.[] | . + {kind: "merged"}'
-    gh search prs --assignee "$GH_WORK_USER" --merged-at "$range" --limit 100 --json number,title,url,repository \
+    gh search prs --assignee "$GH_WORK_USER" --merged-at "$range" --limit 1000 --json number,title,url,repository \
       | jq -c '.[] | . + {kind: "merged"}'
   } | jq -s -r '
       unique_by([.repository.nameWithOwner, .number])
