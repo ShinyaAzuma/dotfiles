@@ -1,0 +1,20 @@
+{
+  "statusLine": {
+    "type": "command",
+    "command": "bash \"__DOTFILES__/claude/statusline.sh\""
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"__DOTFILES__/claude/hooks/ask-remote-branch-delete.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
