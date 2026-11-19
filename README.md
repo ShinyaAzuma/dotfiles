@@ -13,6 +13,7 @@ macOS 向けの個人用 dotfiles です。
 | `lazygit/` | lazygit 設定（コミット確定キー、delta 連携） |
 | `git/` | git の差分表示設定（delta / difftastic）。`~/.gitconfig` とは分離 |
 | `ghostty/` | Ghostty ターミナル設定 |
+| `claude/` | Claude Code の共通設定（CLAUDE.md・settings.json の管理キー・hook・statusline） |
 | `bin/` | 自作コマンド |
 | `launchd/` | 定期実行ジョブの plist |
 | `tests/` | 設定の回帰テスト |
@@ -38,6 +39,7 @@ chmod +x setup.sh
 - `~/dotfiles/lazygit/config.yml` → `~/Library/Application Support/lazygit/config.yml`
 - `~/dotfiles/git/config` → `~/.config/git/config`
 - `~/dotfiles/bin/*` → `~/bin/`
+- `~/dotfiles/claude/CLAUDE.md` → `~/.claude/CLAUDE.md`（`~/.claude-rewire` があればそちらにも）
 
 `~/.gitconfig` は氏名・メールを持ち、`gitMain` / `gitPri` が書き換えるため触りません。差分表示の設定だけを `~/.config/git/config` に置いて共存させています。
 
@@ -181,6 +183,37 @@ brew install sesh zoxide fzf
 | `cmd+w` | ペインを閉じる |
 
 `cmd` 系のため tmux prefix (`Ctrl+t`) と衝突しません。
+
+## Claude Code
+
+個人（`~/.claude`）と Rewire（`~/.claude-rewire`、`CLAUDE_CONFIG_DIR` で切替）の両プロファイルに、同じ指示と設定を配ります。`~/.claude-rewire` はログイン済みのマシンにしか無いため、無ければ作りません。
+
+| ファイル | 配り方 |
+|---|---|
+| `claude/CLAUDE.md` | 各プロファイルの `CLAUDE.md` にリンク。既存の実体ファイルは `*.bak.<日時>` に退避 |
+| `claude/settings.json` | 各プロファイルの `settings.json` にキー単位で上書きマージ（`__DOTFILES__` は dotfiles のパスに展開） |
+| `claude/hooks/`、`claude/statusline.sh` | settings.json からリポジトリ内のパスを直接参照 |
+
+### 公開しないルールは `~/.claude/CLAUDE.private.md` へ
+
+このリポジトリは公開のため、Issue 管理の対応先や plan の保存先といった運用ルールは `~/.claude/CLAUDE.private.md` に置きます。`claude/CLAUDE.md` の末尾で `@~/.claude/CLAUDE.private.md` として import しているので、Rewire 側のプロファイルからも同じファイルが読まれます。`setup.sh` は未作成時のみ `claude/CLAUDE.private.md.example` をコピーします。
+
+### settings.json をリンクにしない理由
+
+`settings.json` は Claude Code 自身が `/permissions` や `/config` で書き込むため、リンクやコピーで管理すると手元の変更が消えます。そこで `claude/settings.json` に書いたキーだけを `jq` の `*` で上書きします。
+
+- `permissions` や `autoMode` はローカルに残ります。`autoMode` にはプロジェクト固有の構成が入るため、リポジトリには入れません
+- `*` は配列を丸ごと置き換えるので、`hooks.PreToolUse` はリポジトリの内容になります。`hooks.SessionStart`（herdr 連携）のように、管理していないイベントは残ります
+- 内容が変わるときだけ、変更前を `settings.json.bak.<日時>` に退避します。JSON として読めない場合は書き換えずに失敗します
+
+### hook
+
+`claude/hooks/ask-remote-branch-delete.sh` は、リモートブランチの削除（`git push --delete` / `git push origin :branch` / `gh pr merge --delete-branch`）だけを確認ダイアログに戻します。`permissions.allow` の `Bash(git push:*)` では削除と通常の push を区別できないためです。
+
+```bash
+bash tests/ask_remote_branch_delete_test.sh
+bash tests/setup_test.sh
+```
 
 ## claude-log-scan
 

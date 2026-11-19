@@ -22,9 +22,9 @@ link() {
   ln -sfn "$src" "$dest" || { failures=$((failures + 1)); return 1; }
 }
 
-# zsh だけは、既存の実体ファイルを黙って消さずタイムスタンプ付きで退避する。
-# ~/.zshrc には手で書き足した内容が残っていることがあるため。
-link_zsh() {
+# 既存の実体ファイルを黙って消さず、タイムスタンプ付きで退避してからリンクする。
+# ~/.zshrc や ~/.claude/CLAUDE.md には手で書き足した内容が残っていることがあるため。
+link_with_backup() {
   local src="$1" dest="$2"
   if [ -e "$dest" ] && [ ! -L "$dest" ]; then
     mv "$dest" "$dest.bak.$(date +%Y%m%d%H%M%S)"
@@ -34,8 +34,8 @@ link_zsh() {
 }
 
 # zsh（個人設定は ~/.zshrc.local に分離するためリポジトリには入れない）
-link_zsh "$DOTFILES_DIR/zsh/zshrc"    "$HOME/.zshrc"
-link_zsh "$DOTFILES_DIR/zsh/zprofile" "$HOME/.zprofile"
+link_with_backup "$DOTFILES_DIR/zsh/zshrc"    "$HOME/.zshrc"
+link_with_backup "$DOTFILES_DIR/zsh/zprofile" "$HOME/.zprofile"
 
 # 個人設定は未作成時のみ雛形を置く（既存の値を潰さない）
 if [ ! -f "$HOME/.zshrc.local" ]; then
@@ -72,6 +72,61 @@ link "$DOTFILES_DIR/bin/tmux-clean" "$HOME/bin/tmux-clean"
 link "$DOTFILES_DIR/bin/sesh-start" "$HOME/bin/sesh-start"
 link "$DOTFILES_DIR/bin/claude-log-scan" "$HOME/bin/claude-log-scan"
 
+# Claude Code（個人 ~/.claude と Rewire ~/.claude-rewire の両プロファイルに配る）
+#
+# - CLAUDE.md: 公開してよい共通ルールだけをリンクする。運用ルールなど公開したくない
+#   ものは ~/.claude/CLAUDE.private.md に置き、CLAUDE.md から @ import する
+#   （Rewire 側も同じファイルを読む）
+# - settings.json: Claude Code 自身が /permissions などで書き込むファイルなので、
+#   リンクやコピーにせず claude/settings.json のキーだけを上書きマージする。
+#   permissions や autoMode（プロジェクト固有の構成を含む）はローカルに残る。
+#   jq の * は配列を丸ごと置き換えるため、hooks.PreToolUse はこちらの内容で上書きされる
+#   （hooks.SessionStart の herdr 連携など、管理していないイベントは残る）
+# - ~/.claude-rewire はログイン済みのマシンにだけあるので、無ければ作らない
+merge_claude_settings() {
+  local dest="$1/settings.json" shared tmp
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "skip: jq が無いため $dest をマージできません" >&2
+    failures=$((failures + 1)); return 1
+  fi
+  shared=$(jq --arg d "$DOTFILES_DIR" \
+    'walk(if type == "string" then gsub("__DOTFILES__"; $d) else . end)' \
+    "$DOTFILES_DIR/claude/settings.json") || { failures=$((failures + 1)); return 1; }
+
+  if [ ! -f "$dest" ]; then
+    printf '%s\n' "$shared" > "$dest"
+    return
+  fi
+  tmp=$(mktemp "$1/.settings.json.XXXXXX")
+  if ! jq -s '.[0] * .[1]' "$dest" <(printf '%s' "$shared") > "$tmp" 2>/dev/null; then
+    rm -f "$tmp"
+    echo "skip: $dest を JSON として読めません。直してから再実行してください" >&2
+    failures=$((failures + 1)); return 1
+  fi
+  if cmp -s <(jq -S . "$dest") <(jq -S . "$tmp"); then
+    rm -f "$tmp"
+    return
+  fi
+  cp -p "$dest" "$dest.bak.$(date +%Y%m%d%H%M%S)"
+  chmod "$(stat -f %Lp "$dest")" "$tmp"   # mktemp は 600 で作るので元の権限に揃える
+  mv "$tmp" "$dest"
+  echo "updated: ${dest}（変更前は .bak に退避）"
+}
+
+for claude_dir in "$HOME/.claude" "$HOME/.claude-rewire"; do
+  if [ "$claude_dir" != "$HOME/.claude" ] && [ ! -d "$claude_dir" ]; then
+    continue
+  fi
+  mkdir -p "$claude_dir"
+  link_with_backup "$DOTFILES_DIR/claude/CLAUDE.md" "$claude_dir/CLAUDE.md"
+  merge_claude_settings "$claude_dir"
+done
+
+if [ ! -f "$HOME/.claude/CLAUDE.private.md" ]; then
+  cp "$DOTFILES_DIR/claude/CLAUDE.private.md.example" "$HOME/.claude/CLAUDE.private.md"
+  echo "created: ~/.claude/CLAUDE.private.md （公開したくないルールを書いてください）"
+fi
+
 # launchd（plist は $HOME を展開できないので、リンクではなく生成する）
 #
 # launchctl は HOME ではなく実ユーザーのセッションに作用する。HOME を差し替えた
@@ -86,7 +141,7 @@ if [ -z "${DOTFILES_SKIP_LAUNCHD:-}" ]; then
     launchctl bootout "gui/$(id -u)/$AGENT" 2>/dev/null
   fi
   launchctl bootstrap "gui/$(id -u)" "$AGENT_DIR/$AGENT.plist" 2>/dev/null \
-    && echo "loaded: $AGENT（毎日12:30にログを検査して通知）" \
+    && echo "loaded: ${AGENT}（毎日12:30にログを検査して通知）" \
     || echo "warn: $AGENT の登録に失敗しました"
 fi
 

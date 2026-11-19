@@ -10,7 +10,8 @@
 #
 # HOME を差し替えたサンドボックスで setup.sh を丸ごと実行して検証する。
 
-SETUP="$(cd "$(dirname "$0")/.." && pwd)/setup.sh"
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+SETUP="$REPO/setup.sh"
 failed=0
 ok()   { printf '  ok   - %s\n' "$1"; }
 fail() { printf '  FAIL - %s\n' "$1"; failed=1; }
@@ -24,6 +25,10 @@ make_sandbox() {
   touch "$d/bin/ide" "$d/bin/tmux-clean" "$d/bin/sesh-start" "$d/bin/claude-log-scan"
   touch "$d/zsh/zshrc" "$d/zsh/zprofile" "$d/lazygit/config.yml" "$d/git/config"
   printf 'GIT_WORK_NAME="Your Work Name"\n' > "$d/zsh/zshrc.local.example"
+  mkdir -p "$d/claude/hooks"
+  printf '# shared\n' > "$d/claude/CLAUDE.md"
+  printf '# private example\n' > "$d/claude/CLAUDE.private.md.example"
+  cp "$REPO/claude/settings.json" "$d/claude/settings.json"
   cp "$SETUP" "$d/setup.sh"
   printf '%s' "$home"
 }
@@ -119,7 +124,83 @@ else
   fail "実体ディレクトリがあっても黙って通過する"
 fi
 
-rm -rf "$HOME_A" "$HOME_B" "$HOME_C"
+echo
+echo "Claude Code: 新規インストール"
+# HOME_A は ~/.claude も ~/.claude-rewire も無い状態から setup.sh を流している
+assert_link "~/.claude/CLAUDE.md をリンクする" "$HOME_A/.claude/CLAUDE.md" "$HOME_A/dotfiles/claude/CLAUDE.md"
+grep -q 'private example' "$HOME_A/.claude/CLAUDE.private.md" 2>/dev/null \
+  && ok "~/.claude/CLAUDE.private.md の雛形を置く" \
+  || fail "~/.claude/CLAUDE.private.md の雛形を置いていない"
+[ "$(jq -r '.statusLine.command' "$HOME_A/.claude/settings.json" 2>/dev/null)" = "bash \"$HOME_A/dotfiles/claude/statusline.sh\"" ] \
+  && ok "settings.json を作り statusLine を dotfiles に向ける" \
+  || fail "settings.json の statusLine が dotfiles を向いていない"
+[ "$(jq -r '.hooks.PreToolUse[0].hooks[0].command' "$HOME_A/.claude/settings.json" 2>/dev/null)" = "bash \"$HOME_A/dotfiles/claude/hooks/ask-remote-branch-delete.sh\"" ] \
+  && ok "リモートブランチ削除の確認 hook を登録する" \
+  || fail "リモートブランチ削除の確認 hook が登録されていない"
+grep -q '__DOTFILES__' "$HOME_A/.claude/settings.json" \
+  && fail "プレースホルダが展開されずに残っている" \
+  || ok "プレースホルダを展開する"
+[ -e "$HOME_A/.claude-rewire" ] \
+  && fail "存在しない ~/.claude-rewire を作ってしまった" \
+  || ok "~/.claude-rewire が無ければ作らない"
+ls "$HOME_A/.claude"/settings.json.bak.* >/dev/null 2>&1 \
+  && fail "2回目の実行で変化が無いのに settings.json を退避した" \
+  || ok "変化が無ければ settings.json を退避しない"
+
+echo
+echo "Claude Code: 既存の設定がある環境"
+HOME_D=$(make_sandbox)
+mkdir -p "$HOME_D/.claude/hooks" "$HOME_D/.claude-rewire"
+printf '# my old instructions\n' > "$HOME_D/.claude/CLAUDE.md"
+printf '# my private rules\n' > "$HOME_D/.claude/CLAUDE.private.md"
+cat > "$HOME_D/.claude/settings.json" <<'JSON'
+{
+  "permissions": {"allow": ["Bash(npm test)"]},
+  "autoMode": {"environment": ["secret-ish local context"]},
+  "statusLine": {"type": "command", "command": "bash /old/statusline.sh"},
+  "hooks": {"SessionStart": [{"matcher": "*", "hooks": [{"type": "command", "command": "herdr-hook"}]}]}
+}
+JSON
+printf '{"model": "opus", "theme": "dark"}\n' > "$HOME_D/.claude-rewire/settings.json"
+run_setup "$HOME_D"
+assert_link "実体の CLAUDE.md をリンクに置き換える" "$HOME_D/.claude/CLAUDE.md" "$HOME_D/dotfiles/claude/CLAUDE.md"
+grep -q 'my old instructions' "$HOME_D/.claude"/CLAUDE.md.bak.* 2>/dev/null \
+  && ok "既存の CLAUDE.md を退避する" \
+  || fail "既存の CLAUDE.md を退避していない"
+grep -q 'my private rules' "$HOME_D/.claude/CLAUDE.private.md" \
+  && ok "既存の CLAUDE.private.md を上書きしない" \
+  || fail "既存の CLAUDE.private.md を上書きした"
+S="$HOME_D/.claude/settings.json"
+[ "$(jq -r '.permissions.allow[0]' "$S")" = "Bash(npm test)" ] && ok "permissions を残す" || fail "permissions が消えた"
+[ "$(jq -r '.autoMode.environment[0]' "$S")" = "secret-ish local context" ] && ok "autoMode を残す" || fail "autoMode が消えた"
+[ "$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$S")" = "herdr-hook" ] && ok "管理外の hook（herdr）を残す" || fail "管理外の hook が消えた"
+[ "$(jq -r '.statusLine.command' "$S")" = "bash \"$HOME_D/dotfiles/claude/statusline.sh\"" ] && ok "statusLine を dotfiles に向け直す" || fail "statusLine が古いまま"
+grep -q '/old/statusline.sh' "$HOME_D/.claude"/settings.json.bak.* 2>/dev/null \
+  && ok "書き換える前の settings.json を退避する" \
+  || fail "書き換える前の settings.json を退避していない"
+assert_link "~/.claude-rewire/CLAUDE.md もリンクする" "$HOME_D/.claude-rewire/CLAUDE.md" "$HOME_D/dotfiles/claude/CLAUDE.md"
+R="$HOME_D/.claude-rewire/settings.json"
+[ "$(jq -r '.model' "$R")" = "opus" ] && ok "Rewire 側の既存キーを残す" || fail "Rewire 側の既存キーが消えた"
+[ "$(jq -r '.hooks.PreToolUse[0].matcher' "$R")" = "Bash" ] && ok "Rewire 側にも hook を登録する" || fail "Rewire 側に hook が無い"
+[ -e "$HOME_D/.claude-rewire/CLAUDE.private.md" ] \
+  && fail "Rewire 側に CLAUDE.private.md を作った（~/.claude のものを共有する想定）" \
+  || ok "Rewire 側には CLAUDE.private.md を作らない"
+
+echo
+echo "Claude Code: settings.json が壊れている場合"
+HOME_E=$(make_sandbox)
+mkdir -p "$HOME_E/.claude"
+printf '{ broken json\n' > "$HOME_E/.claude/settings.json"
+if run_setup "$HOME_E"; then
+  fail "壊れた settings.json を黙って通過する"
+else
+  ok "壊れた settings.json があれば失敗を返す"
+fi
+[ "$(cat "$HOME_E/.claude/settings.json")" = "{ broken json" ] \
+  && ok "壊れた settings.json を上書きしない" \
+  || fail "壊れた settings.json を上書きした"
+
+rm -rf "$HOME_A" "$HOME_B" "$HOME_C" "$HOME_D" "$HOME_E"
 echo
 [ "$failed" -eq 0 ] && echo "すべて通過" || echo "失敗あり"
 exit "$failed"

@@ -1,0 +1,12 @@
+# 公開しないルール（~/.claude/CLAUDE.private.md の雛形）
+#
+# setup.sh が ~/.claude/CLAUDE.private.md として未作成時のみコピーします。
+# dotfiles/claude/CLAUDE.md から @ import され、個人・Rewire の両プロファイルで読まれます。
+# このファイルはリポジトリに入りません。プロダクト名・チーム名・ノートの ID・
+# 組織固有の運用ルールなど、公開したくない内容はこちらに書いてください。
+
+# Issue管理
+- （Issue 管理ツールと、リポジトリごとの対応先を書く）
+
+# planモード
+- （計画の保存先などを書く）
